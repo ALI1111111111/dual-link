@@ -1,0 +1,221 @@
+package com.duallink.app
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.ContentValues
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+import android.os.Handler
+import android.os.Looper
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import io.flutter.plugin.common.EventChannel
+import org.json.JSONObject
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+
+const val DEFAULT_PORT = 47820
+const val NSD_TYPE = "_duallink._tcp."
+const val CH_SERVICE = "service"
+const val CH_SMS = "sms"
+
+/** Wraps the pairing key with a key that never leaves the phone's secure hardware (Android Keystore). */
+private object Vault {
+    private const val ALIAS = "duallink-vault"
+
+    private fun key(): SecretKey {
+        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        val g = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        g.init(KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            .build())
+        return g.generateKey()
+    }
+
+    fun wrap(plain: String): String {
+        val c = Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(Cipher.ENCRYPT_MODE, key())
+        return Crypto.b64(c.iv + c.doFinal(plain.toByteArray()))
+    }
+
+    fun unwrap(data: String): String? = runCatching {
+        val raw = Crypto.unb64(data)
+        val c = Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, raw, 0, 12))
+        String(c.doFinal(raw, 12, raw.size - 12))
+    }.getOrNull()
+}
+
+class Prefs(ctx: Context) {
+    private val p = ctx.getSharedPreferences("duallink", Context.MODE_PRIVATE)
+    var mode: String? get() = p.getString("mode", null); set(v) = p.edit().putString("mode", v).apply()
+    var key: String?
+        get() = p.getString("key", null)?.let { Vault.unwrap(it) }
+        set(v) = p.edit().putString("key", v?.let { Vault.wrap(it) }).apply()
+    var host: String? get() = p.getString("host", null); set(v) = p.edit().putString("host", v).apply()
+    var port: Int get() = p.getInt("port", DEFAULT_PORT); set(v) = p.edit().putInt("port", v).apply()
+    var enabled: Boolean get() = p.getBoolean("enabled", false); set(v) = p.edit().putBoolean("enabled", v).apply()
+    fun clear() = p.edit().clear().apply()
+}
+
+/**
+ * Gateway: `pending` = received SMS not yet confirmed by the client; `sent` = send ids already handled
+ * (so a retry after a dropped connection never sends the same SMS twice).
+ * Client: `messages` = local inbox/outbox.
+ */
+class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.db", null, 2) {
+    companion object {
+        @Volatile private var inst: Store? = null
+        fun get(ctx: Context) = inst ?: synchronized(this) { inst ?: Store(ctx.applicationContext).also { inst = it } }
+    }
+
+    override fun onCreate(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE pending(id TEXT PRIMARY KEY, json TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE sent(id TEXT PRIMARY KEY, state TEXT NOT NULL, ts INTEGER NOT NULL)")
+        db.execSQL(
+            "CREATE TABLE messages(id TEXT PRIMARY KEY, address TEXT NOT NULL, body TEXT NOT NULL, " +
+                "ts INTEGER NOT NULL, dir INTEGER NOT NULL, status TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0, " +
+                "sim INTEGER NOT NULL DEFAULT -1, reason TEXT)"
+        )
+        db.execSQL("CREATE INDEX idx_msg_addr ON messages(address, ts)")
+    }
+
+    /** Keeps existing messages when the app is updated. */
+    override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {
+        if (o < 2) {
+            db.execSQL("ALTER TABLE messages ADD COLUMN sim INTEGER NOT NULL DEFAULT -1")
+            db.execSQL("ALTER TABLE messages ADD COLUMN reason TEXT")
+        }
+    }
+
+    // ---- gateway ----
+    fun addPending(id: String, json: JSONObject) {
+        writableDatabase.insertWithOnConflict("pending", null,
+            ContentValues().apply { put("id", id); put("json", json.toString()) }, SQLiteDatabase.CONFLICT_IGNORE)
+    }
+
+    fun removePending(id: String) = writableDatabase.delete("pending", "id=?", arrayOf(id))
+
+    fun allPending(): List<JSONObject> =
+        readableDatabase.rawQuery("SELECT json FROM pending ORDER BY rowid", null).use { c ->
+            buildList { while (c.moveToNext()) add(JSONObject(c.getString(0))) }
+        }
+
+    fun pendingCount(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM pending", null).use { c -> c.moveToFirst(); c.getInt(0) }
+
+    /** Returns the earlier state if this send id was already handled, or null after claiming it. */
+    @Synchronized
+    fun claimSend(id: String): String? {
+        readableDatabase.rawQuery("SELECT state FROM sent WHERE id=?", arrayOf(id)).use { c ->
+            if (c.moveToFirst()) return c.getString(0)
+        }
+        writableDatabase.insert("sent", null, ContentValues().apply {
+            put("id", id); put("state", "sending"); put("ts", System.currentTimeMillis())
+        })
+        // Keep the table small: forget ids older than 7 days.
+        writableDatabase.delete("sent", "ts < ?", arrayOf((System.currentTimeMillis() - 7 * 86_400_000L).toString()))
+        return null
+    }
+
+    fun setSendState(id: String, state: String) =
+        writableDatabase.update("sent", ContentValues().apply { put("state", state) }, "id=?", arrayOf(id))
+
+    // ---- client ----
+    /** Returns false if the message was already stored (duplicate delivery). */
+    fun addMessage(id: String, address: String, body: String, ts: Long, dir: Int, status: String, sim: Int, read: Boolean = dir == 1): Boolean {
+        val row = writableDatabase.insertWithOnConflict("messages", null, ContentValues().apply {
+            put("id", id); put("address", phoneKey(address)); put("body", body); put("ts", ts)
+            put("dir", dir); put("status", status); put("read", if (read) 1 else 0); put("sim", sim)
+        }, SQLiteDatabase.CONFLICT_IGNORE)
+        return row != -1L
+    }
+
+    /**
+     * History from Phone A's SMS database. Skips anything already here: a received SMS that was also
+     * relayed live has the same number, text and network timestamp (within 3 s). Sent SMS made by
+     * Dual Link are already filtered out on Phone A, so genuine repeats ("ok", "ok") are kept.
+     */
+    @Synchronized
+    fun addHistory(id: String, address: String, body: String, ts: Long, dir: Int, sim: Int): Boolean {
+        val key = phoneKey(address)
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM messages WHERE id=? OR (address=? AND body=? AND dir=? AND ABS(ts-?) < 3000 AND id NOT LIKE 'h-%') LIMIT 1",
+            arrayOf(id, key, body, dir.toString(), ts.toString())
+        ).use { if (it.moveToFirst()) return false }
+        return addMessage(id, key, body, ts, dir, if (dir == 1) "sent" else "received", sim, read = true)
+    }
+
+    fun newestHistoryTs(): Long = readableDatabase.rawQuery(
+        "SELECT COALESCE(MAX(ts),0) FROM messages WHERE id LIKE 'h-%'", null).use { it.moveToFirst(); it.getLong(0) }
+
+    fun setStatus(id: String, status: String, reason: String? = null) =
+        writableDatabase.update("messages", ContentValues().apply { put("status", status); put("reason", reason) }, "id=?", arrayOf(id))
+
+    fun markRead(address: String) =
+        writableDatabase.update("messages", ContentValues().apply { put("read", 1) }, "address=?", arrayOf(phoneKey(address)))
+
+    /** Not yet confirmed by the gateway. Re-sending is safe: the gateway ignores ids it already handled. */
+    fun unconfirmedOutgoing(): List<JSONObject> =
+        readableDatabase.rawQuery(
+            "SELECT id,address,body,sim FROM messages WHERE dir=1 AND status IN ('queued','sending') ORDER BY ts", null
+        ).use { c ->
+            buildList { while (c.moveToNext()) add(JSONObject().put("id", c.getString(0)).put("to", c.getString(1))
+                .put("body", c.getString(2)).put("sim", c.getInt(3))) }
+        }
+
+    fun threads(): List<Map<String, Any>> = readableDatabase.rawQuery(
+        "SELECT m.address, m.body, m.ts, m.dir, " +
+            "(SELECT COUNT(*) FROM messages u WHERE u.address=m.address AND u.read=0) " +
+            "FROM messages m WHERE m.ts = (SELECT MAX(ts) FROM messages x WHERE x.address=m.address) " +
+            "GROUP BY m.address ORDER BY m.ts DESC", null
+    ).use { c ->
+        buildList {
+            while (c.moveToNext()) add(mapOf(
+                "address" to c.getString(0), "body" to c.getString(1), "ts" to c.getLong(2),
+                "dir" to c.getInt(3), "unread" to c.getInt(4)))
+        }
+    }
+
+    fun messages(address: String): List<Map<String, Any>> = readableDatabase.rawQuery(
+        "SELECT id, body, ts, dir, status, sim, reason FROM messages WHERE address=? ORDER BY ts", arrayOf(phoneKey(address))
+    ).use { c ->
+        buildList {
+            while (c.moveToNext()) add(mapOf(
+                "id" to c.getString(0), "body" to c.getString(1), "ts" to c.getLong(2),
+                "dir" to c.getInt(3), "status" to c.getString(4), "sim" to c.getInt(5), "reason" to c.getString(6)))
+        }
+    }
+}
+
+/** Pushes events from services to the Flutter UI (if it is open). */
+object Bus {
+    @Volatile var sink: EventChannel.EventSink? = null
+    private val main = Handler(Looper.getMainLooper())
+    fun emit(type: String, data: Map<String, Any?> = emptyMap()) {
+        main.post { sink?.success(data + ("type" to type)) }
+    }
+}
+
+fun localIp(): String? = NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()
+    .filter { it.isUp && !it.isLoopback }
+    .sortedBy { if (it.name.startsWith("wlan")) 0 else 1 }
+    .flatMap { it.inetAddresses.toList() }
+    .firstOrNull { it is Inet4Address && it.isSiteLocalAddress }?.hostAddress
+
+fun ensureChannels(ctx: Context) {
+    val nm = ctx.getSystemService(NotificationManager::class.java)
+    nm.createNotificationChannel(NotificationChannel(CH_SERVICE, "Background connection", NotificationManager.IMPORTANCE_MIN))
+    nm.createNotificationChannel(NotificationChannel(CH_SMS, "Messages", NotificationManager.IMPORTANCE_HIGH).apply {
+        lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+    })
+}

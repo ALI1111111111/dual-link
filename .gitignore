@@ -1,0 +1,11 @@
+# Build outputs and logs (Flutter-specific ignores live in dual_link/.gitignore)
+*.apk
+*.aab
+*.log
+build_log.txt
+test_log.txt
+
+# Local tooling
+.claude/
+.idea/
+.vscode/

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dual Link icon: phone with SIM (left) linked both ways to phone with message (right).
+     108dp adaptive canvas; artwork stays inside the 66dp safe zone (21..87). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+  <!-- Scaled down so round/squircle launcher masks never clip the phones -->
+  <group android:scaleX="0.78" android:scaleY="0.78" android:pivotX="54" android:pivotY="54">
+
+    <!-- Left phone (has the SIM) -->
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3.5" android:fillColor="#00000000"
+        android:strokeLineJoin="round"
+        android:pathData="M29,28 H43 A5,5 0 0 1 48,33 V75 A5,5 0 0 1 43,80 H29 A5,5 0 0 1 24,75 V33 A5,5 0 0 1 29,28 Z" />
+    <!-- SIM card -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M30.5,38 H38.5 L42,41.5 V55 A1.5,1.5 0 0 1 40.5,56.5 H30.5 A1.5,1.5 0 0 1 29,55 V39.5 A1.5,1.5 0 0 1 30.5,38 Z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M32,73 H40" />
+
+    <!-- Right phone (no SIM, shows messages) -->
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3.5" android:fillColor="#00000000"
+        android:strokeLineJoin="round"
+        android:pathData="M65,28 H79 A5,5 0 0 1 84,33 V75 A5,5 0 0 1 79,80 H65 A5,5 0 0 1 60,75 V33 A5,5 0 0 1 65,28 Z" />
+    <!-- Message bubble -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M66,38 H78 A2,2 0 0 1 80,40 V49 A2,2 0 0 1 78,51 H70.5 L66.5,55 V51 H66 A2,2 0 0 1 64,49 V40 A2,2 0 0 1 66,38 Z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3" android:strokeLineCap="round"
+        android:pathData="M68,73 H76" />
+
+    <!-- Two-way link between the phones -->
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:strokeLineJoin="round" android:fillColor="#00000000"
+        android:pathData="M50.5,49 H57.5 M54.8,46.3 L57.5,49 L54.8,51.7" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.6" android:strokeLineCap="round"
+        android:strokeLineJoin="round" android:fillColor="#00000000"
+        android:pathData="M57.5,59 H50.5 M53.2,56.3 L50.5,59 L53.2,61.7" />
+  </group>
+</vector>
