@@ -20,7 +20,7 @@ $results = New-Object System.Collections.Generic.List[object]
 # No named params here: PowerShell would treat adb flags like -d as short for a param name.
 function Adb { $dev, $rest = $args; $argv = @('-s', $dev) + @($rest); & $adb $argv 2>$null }
 function Hook($dev, [string]$extras) { Adb $dev shell "am broadcast -n $pkg/.TestHooks $extras" | Out-Null }
-function Log($dev) { (Adb $dev logcat -d -v time -s DualLinkClient:I DualLinkGateway:I DualLinkTest:I DualLinkSms:I) -join "`n" }
+function Log($dev) { (Adb $dev logcat -d -v time -s DualLinkClient:I DualLinkGateway:I DualLinkTest:I DualLinkSms:I DualLinkCalls:I) -join "`n" }
 function Count($dev, [string]$pattern) { ([regex]::Matches((Log $dev), $pattern)).Count }
 
 # Waits until $pattern appears at least $n times in the device log. Returns seconds taken, or -1.
@@ -237,6 +237,42 @@ $sys = [regex]::Match((Log $B), 'UAT syscount n=(-?\d+)').Groups[1].Value
 Check 'T18 New SMS lands in the phone''s SMS inbox in real time' ($t -ge 0 -and [int]$sys -ge 1) "system SMS rows: $sys"
 $res = (Adb $B shell cmd package resolve-activity --brief -a android.intent.action.SENDTO -d sms:5556) -join ' '
 Check 'T19 "Message" / sms: links open Dual Link' ($res -match $pkg) $res.Trim()
+
+# ---------------------------------------------------------------- T20-T25 calls
+Adb $A shell pm grant $pkg android.permission.READ_CALL_LOG
+Adb $A shell pm grant $pkg android.permission.ANSWER_PHONE_CALLS
+Adb $A shell pm grant $pkg android.permission.CALL_PHONE
+Hook $A '--es cmd stopgw'; Start-Sleep 1; Hook $A '--es cmd startgw'   # pick up the call permissions
+$null = WaitFor $B 'UAT connected' ((Count $B 'UAT connected') + 1) 30
+$r0 = Count $B 'UAT call_ringing'
+Adb $A emu gsm call 03001112233 | Out-Null
+$tA = WaitFor $A 'UAT call_state ringing' 1 15
+$tB = WaitFor $B 'UAT call_ringing' ($r0 + 1) 15
+Check 'T20 Incoming call on Phone A rings on Phone B' ($tA -ge 0 -and $tB -ge 0) "A saw it ${tA}s, B rang ${tB}s"
+Hook $B '--es cmd callcmd --es c decline'
+$t = WaitFor $A 'UAT call_cmd decline ok=true' 1 10
+$t2 = WaitFor $B 'UAT call_ended missed=true' 1 10
+Check 'T21 Decline from Phone B ends the call on Phone A' ($t -ge 0 -and $t2 -ge 0) "declined in ${t}s"
+$c0 = Count $B 'UAT calllog_done'
+$t = WaitFor $B 'UAT calllog_done' ($c0 + 1) 15
+Check 'T22 Call history updates on Phone B after the call' ($t -ge 0)
+Adb $A emu gsm call 03004445566 | Out-Null
+$null = WaitFor $B 'UAT call_ringing' ($r0 + 2) 15
+Hook $B '--es cmd callcmd --es c answer'
+$t = WaitFor $A 'UAT call_state active' 1 10
+Check 'T23 Answer on Phone A from Phone B' ((Count $A 'UAT call_cmd answer ok=true') -ge 1 -and $t -ge 0)
+Hook $B '--es cmd callcmd --es c end'
+$t = WaitFor $B 'UAT call_ended missed=false' 1 10
+Check 'T24 End call from Phone B' ((Count $A 'UAT call_cmd end ok=true') -ge 1 -and $t -ge 0)
+Adb $A emu gsm cancel 03004445566 | Out-Null
+Hook $B '--es cmd callcmd --es c dial --es number 5556'
+$t = WaitFor $A 'UAT call_state active' 2 15
+Check 'T25 Phone B makes Phone A dial a number' ((Count $A 'UAT call_cmd dial ok=true') -ge 1 -and $t -ge 0)
+Hook $B '--es cmd callcmd --es c end'
+$null = WaitFor $A 'UAT call_cmd end ok=true' 2 10
+Hook $B "--es cmd callcmd --es c dial --es number '*123#'"
+$t = WaitFor $A 'UAT call_cmd dial ok=false reason=invalid_number' 1 10
+Check 'T26 Dialing USSD / invalid numbers is refused' ($t -ge 0)
 
 # ---------------------------------------------------------------- summary
 Write-Host ""

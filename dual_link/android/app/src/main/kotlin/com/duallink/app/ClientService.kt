@@ -46,6 +46,14 @@ class ClientService : Service() {
         fun stop(ctx: Context) = ctx.stopService(Intent(ctx, ClientService::class.java))
 
         /** Saves the message, then sends it now or as soon as the gateway is reachable. */
+        /** decline / answer / end / dial on Phone A. Returns false if Phone A isn't connected. */
+        fun callCommand(cmd: JSONObject): Boolean {
+            val svc = instance ?: return false
+            if (svc.link == null) return false
+            svc.write(cmd.put("t", "callcmd"))
+            return true
+        }
+
         /** [sim] = Phone A subscription id, or -1 for Phone A's default SMS SIM. */
         fun sendSms(ctx: Context, to: String, body: String, sim: Int = -1): String {
             val id = UUID.randomUUID().toString()
@@ -58,7 +66,7 @@ class ClientService : Service() {
 
     private lateinit var prefs: Prefs
     @Volatile private var running = true
-    @Volatile private var link: SecureLink? = null
+    @Volatile internal var link: SecureLink? = null
     @Volatile private var socket: Socket? = null
     @Volatile private var onWifi = false
     private val wake = Object() // connect loop sleeps on this; Wi-Fi changes wake it early
@@ -146,6 +154,7 @@ class ClientService : Service() {
                 flushQueue()
                 // Catch up on SMS history (first time: last 30 days; later: only what's new).
                 write(JSONObject().put("t", "history").put("since", Store.get(this).newestHistoryTs()))
+                write(JSONObject().put("t", "calllog").put("since", Store.get(this).newestCallTs()))
                 while (running) {
                     val m = l.read() ?: break
                     handle(m)
@@ -171,7 +180,7 @@ class ClientService : Service() {
         }
     }
 
-    private fun write(m: JSONObject, onOk: (() -> Unit)? = null) {
+    internal fun write(m: JSONObject, onOk: (() -> Unit)? = null) {
         val l = link ?: return
         val s = socket
         runCatching {
@@ -195,6 +204,19 @@ class ClientService : Service() {
                     SystemSms.sync(this)
                     Bus.emit("sms", mapOf("address" to phoneKey(from)))
                 }
+            }
+            "call" -> ClientCalls.handle(this, m)
+            "calls" -> {
+                val a = m.getJSONArray("items")
+                val store = Store.get(this)
+                for (i in 0 until a.length()) a.getJSONObject(i).let {
+                    store.addCall(it.getString("id"), it.getString("number"), it.getInt("type"), it.getLong("ts"), it.getLong("dur"), it.optInt("sim", -1))
+                }
+                if (m.optBoolean("done")) { Log.i(TAG, "UAT calllog_done"); Bus.emit("calls", emptyMap()) }
+            }
+            "callcmd_result" -> {
+                Log.i(TAG, "UAT callcmd_result cmd=${m.optString("cmd")} ok=${m.optBoolean("ok")} reason=${m.optString("reason")}")
+                Bus.emit("callcmd", mapOf("cmd" to m.optString("cmd"), "ok" to m.optBoolean("ok"), "reason" to m.optString("reason")))
             }
             "hist" -> Store.get(this).addHistory(m.getString("id"), m.getString("addr"), m.getString("body"),
                 m.getLong("ts"), m.getInt("dir"), m.optInt("sim", -1))
@@ -245,6 +267,11 @@ class ClientService : Service() {
         if (connected == c) return
         connected = c
         Log.i(TAG, if (c) "UAT connected" else "UAT disconnected")
+        if (!c && ClientCalls.current != null) { // lost Phone A mid-call: stop ringing, we can't know the outcome
+            ClientCalls.current = null
+            androidx.core.app.NotificationManagerCompat.from(this).cancel(ClientCalls.NOTIF_CALL)
+            Bus.emit("call", mapOf("state" to "ended"))
+        }
         getSystemService(android.app.NotificationManager::class.java)
             .notify(2, notification(if (c) "Connected to Phone A" else "Connecting to Phone A…"))
         Bus.emit("client", mapOf("connected" to c))

@@ -72,7 +72,7 @@ class Prefs(ctx: Context) {
  * (so a retry after a dropped connection never sends the same SMS twice).
  * Client: `messages` = local inbox/outbox.
  */
-class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.db", null, 3) {
+class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.db", null, 4) {
     /** A finished message waiting to be copied into Android's SMS database. */
     data class Row(val id: String, val address: String, val body: String, val ts: Long, val status: String, val read: Boolean)
 
@@ -90,6 +90,26 @@ class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.
                 "sim INTEGER NOT NULL DEFAULT -1, reason TEXT, sys_uri TEXT)"
         )
         db.execSQL("CREATE INDEX idx_msg_addr ON messages(address, ts)")
+        createCalls(db)
+    }
+
+    /** Phone B: Phone A's call history. type = CallLog.Calls.TYPE (1 in, 2 out, 3 missed, 5 rejected). */
+    private fun createCalls(db: SQLiteDatabase) = db.execSQL(
+        "CREATE TABLE calls(id TEXT PRIMARY KEY, number TEXT NOT NULL, type INTEGER NOT NULL, ts INTEGER NOT NULL, dur INTEGER NOT NULL, sim INTEGER NOT NULL)")
+
+    fun addCall(id: String, number: String, type: Int, ts: Long, dur: Long, sim: Int) {
+        writableDatabase.insertWithOnConflict("calls", null, ContentValues().apply {
+            put("id", id); put("number", phoneKey(number)); put("type", type); put("ts", ts); put("dur", dur); put("sim", sim)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun newestCallTs(): Long = readableDatabase.rawQuery("SELECT COALESCE(MAX(ts),0) FROM calls", null).use { it.moveToFirst(); it.getLong(0) }
+
+    fun calls(limit: Int = 300): List<Map<String, Any>> = readableDatabase.rawQuery(
+        "SELECT id, number, type, ts, dur, sim FROM calls ORDER BY ts DESC LIMIT $limit", null
+    ).use { c ->
+        buildList { while (c.moveToNext()) add(mapOf("id" to c.getString(0), "number" to c.getString(1), "type" to c.getInt(2),
+            "ts" to c.getLong(3), "dur" to c.getLong(4), "sim" to c.getInt(5))) }
     }
 
     /** Keeps existing messages when the app is updated. */
@@ -99,6 +119,7 @@ class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.
             db.execSQL("ALTER TABLE messages ADD COLUMN reason TEXT")
         }
         if (o < 3) db.execSQL("ALTER TABLE messages ADD COLUMN sys_uri TEXT")
+        if (o < 4) createCalls(db)
     }
 
     // ---- default SMS app (Phone B) ----

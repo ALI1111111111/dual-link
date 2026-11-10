@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../contacts.dart';
 import '../native.dart';
+import 'calls_screen.dart' show dialViaPhoneA;
 
 String _time(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -345,6 +346,10 @@ class _ThreadScreenState extends State<ThreadScreen> {
             if (name != null) Text(widget.address, style: Theme.of(context).textTheme.bodySmall),
           ],
         ),
+        actions: [
+          if (RegExp(r'^\+?\d{3,15}$').hasMatch(widget.address))
+            IconButton(tooltip: 'Call via Phone A', icon: const Icon(Icons.call), onPressed: () => dialViaPhoneA(context, widget.address)),
+        ],
       ),
       body: Column(
         children: [

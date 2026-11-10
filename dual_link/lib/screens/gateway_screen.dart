@@ -20,6 +20,7 @@ class _GatewaySetupScreenState extends State<GatewaySetupScreen> {
   Future<void> _start() async {
     await Native.requestPermissions(['notifications']);
     final sms = await Native.requestPermissions(['sms']);
+    await Native.requestPermissions(['calls']); // optional: call alerts on Phone B
     if (!sms) {
       setState(() => _error = 'SMS permission is needed to forward messages. '
           'If Android blocks it, open App info → ⋮ → "Allow restricted settings", allow SMS, then try again.');
@@ -42,6 +43,7 @@ class _GatewaySetupScreenState extends State<GatewaySetupScreen> {
           const SizedBox(height: 12),
           const ListTile(leading: Icon(Icons.sms), title: Text('Read incoming SMS and pass them to Phone B')),
           const ListTile(leading: Icon(Icons.send), title: Text('Send SMS from your SIM when Phone B replies')),
+          const ListTile(leading: Icon(Icons.call), title: Text('Tell Phone B about calls; let it decline, answer or dial')),
           const ListTile(leading: Icon(Icons.battery_charging_full), title: Text('Run in the background (allow "no battery limits")')),
           const SizedBox(height: 24),
           if (_error != null) ...[
@@ -75,7 +77,9 @@ class _GatewayScreenState extends State<GatewayScreen> with WidgetsBindingObserv
     WidgetsBinding.instance.addObserver(this);
     _refresh();
     // Asks only for what's missing (e.g. SMS history + SIM list after an update).
-    Native.requestPermissions(['sms']).then((_) => _refresh());
+    Native.requestPermissions(['sms'])
+        .then((_) => Native.requestPermissions(['calls']))
+        .then((_) => _refresh());
     _sub = Native.events.listen((e) {
       if (e['type'] == 'gateway') _refresh();
     });

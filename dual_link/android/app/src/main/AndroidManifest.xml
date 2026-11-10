@@ -8,6 +8,12 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <!-- Client: show contact names and pick recipients -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Calls on Phone A: see who's calling, answer/decline/end, dial on a chosen SIM, call history -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- Phone B: incoming-call alert shows full screen like a real call -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- Default SMS app role expects these to be requested -->
     <uses-permission android:name="android.permission.RECEIVE_MMS" />
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
@@ -67,6 +73,14 @@
                 <data android:scheme="mms" />
                 <data android:scheme="mmsto" />
             </intent-filter>
+            <!-- "Call" in Contacts / tel: links: choose Dual Link to call through Phone A's SIM -->
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+            </intent-filter>
         </activity>
 
         <!-- Default SMS app requirements -->
@@ -102,6 +116,7 @@
         </service>
         <!-- Notification buttons (Reply / Mark as read / Copy code); only this app can trigger it -->
         <receiver android:name=".NotificationActionReceiver" android:exported="false" />
+        <receiver android:name=".CallActionReceiver" android:exported="false" />
 
         <service
             android:name=".GatewayService"

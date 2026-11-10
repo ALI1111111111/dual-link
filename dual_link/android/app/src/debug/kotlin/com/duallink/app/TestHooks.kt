@@ -31,6 +31,8 @@ class TestHooks : BroadcastReceiver() {
             "rotate" -> { p.key = Crypto.newKey(); GatewayService.instance?.disconnectClient(); Log.i("DualLinkTest", "UAT rotated") }
             "stopgw" -> GatewayService.stop(ctx)
             "startgw" -> GatewayService.start(ctx)
+            "callcmd" -> ClientService.callCommand(JSONObject().put("cmd", i.getStringExtra("c"))
+                .put("number", i.getStringExtra("number") ?: "").put("sim", i.getIntExtra("sim", -1)))
             "syscount" -> {
                 val n = runCatching {
                     ctx.contentResolver.query(android.provider.Telephony.Sms.CONTENT_URI, arrayOf("_id"), null, null, null)?.use { it.count }

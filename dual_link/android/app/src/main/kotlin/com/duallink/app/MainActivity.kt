@@ -28,7 +28,7 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         // Launched from Contacts / a link / a notification: Flutter asks for this once it starts.
         pendingCompose = composeFrom(intent)
-            ?: intent?.getStringExtra("address")?.let { mapOf("address" to it, "body" to null) }
+            ?: intent?.getStringExtra("address")?.let { mapOf("action" to "sms", "address" to it, "body" to null) }
         // Release builds: no screenshots / screen recording of SMS or the pairing QR code.
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
             window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
@@ -126,6 +126,25 @@ class MainActivity : FlutterActivity() {
                             result.success(null)
                         }
 
+                        "calls" -> result.success(store.calls())
+
+                        "callCmd" -> {
+                            val j = JSONObject().put("cmd", call.argument<String>("cmd"))
+                            call.argument<String>("number")?.let { j.put("number", it) }
+                            call.argument<Int>("sim")?.let { j.put("sim", it) }
+                            result.success(ClientService.callCommand(j))
+                        }
+
+                        /** Android 14+: full-screen incoming-call alerts need the user's OK once. */
+                        "canFullScreen" -> result.success(
+                            Build.VERSION.SDK_INT < 34 || getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent())
+
+                        "openFullScreenSettings" -> {
+                            if (Build.VERSION.SDK_INT >= 34) startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                Uri.parse("package:$packageName")))
+                            result.success(null)
+                        }
+
                         "isDefaultSms" -> result.success(SystemSms.isDefault(this@MainActivity))
 
                         "requestDefaultSms" -> {
@@ -194,6 +213,7 @@ class MainActivity : FlutterActivity() {
             "connected" to ClientService.connected,
             "battery" to ClientService.gatewayBattery,
             "sims" to ClientService.gatewaySims,
+            "call" to ClientCalls.current,
         )
     }
 
@@ -220,6 +240,8 @@ class MainActivity : FlutterActivity() {
         "sms" -> listOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.SEND_SMS,
             Manifest.permission.READ_SMS, Manifest.permission.READ_PHONE_STATE)
         "contacts" -> listOf(Manifest.permission.READ_CONTACTS)
+        "calls" -> listOf(Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.ANSWER_PHONE_CALLS, Manifest.permission.CALL_PHONE)
         "notifications" -> if (Build.VERSION.SDK_INT >= 33) listOf(Manifest.permission.POST_NOTIFICATIONS) else emptyList()
         "camera" -> listOf(Manifest.permission.CAMERA)
         else -> emptyList()
@@ -237,13 +259,18 @@ class MainActivity : FlutterActivity() {
 
     /** sms:/smsto: from Contacts, links or other apps -> {address, body}. */
     private fun composeFrom(i: Intent?): Map<String, String?>? {
+        if (i?.getBooleanExtra("callScreen", false) == true) return mapOf("action" to "calls", "address" to i.getStringExtra("address"))
         val data = i?.data ?: return null
+        if (data.scheme == "tel") {
+            val n = Uri.decode(data.schemeSpecificPart).trim()
+            return if (n.isEmpty()) null else mapOf("action" to "call", "address" to phoneKey(n))
+        }
         if (data.scheme !in setOf("sms", "smsto", "mms", "mmsto")) return null
         val to = Uri.decode(data.schemeSpecificPart.substringBefore('?')).split(';', ',').firstOrNull()?.trim()
         if (to.isNullOrEmpty()) return null
         val body = i.getStringExtra("sms_body") ?: i.getStringExtra(Intent.EXTRA_TEXT)
             ?: data.getQueryParameterSafe("body")
-        return mapOf("address" to phoneKey(to), "body" to body)
+        return mapOf("action" to "sms", "address" to phoneKey(to), "body" to body)
     }
 
     private fun Uri.getQueryParameterSafe(name: String): String? =

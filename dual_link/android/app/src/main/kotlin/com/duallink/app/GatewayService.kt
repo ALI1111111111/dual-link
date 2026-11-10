@@ -69,6 +69,7 @@ class GatewayService : Service() {
     private val writer = Executors.newSingleThreadExecutor() // keeps outgoing frames in order
     private val simQueue = Executors.newSingleThreadExecutor() // SMS go out in the order they were written
     private val limiter = RateLimiter(SendPolicy.MAX_PER_MINUTE)
+    private var calls: GatewayCalls? = null
     // send id -> [parts remaining, failed?, first error code]
     private val sending = HashMap<String, IntArray>()
 
@@ -122,6 +123,7 @@ class GatewayService : Service() {
         ServiceCompat.startForeground(this, 1, notification("Waiting for Phone B…"), type)
         instance = this
         ContextCompat.registerReceiver(this, sentReceiver, IntentFilter(ACTION_SENT), ContextCompat.RECEIVER_NOT_EXPORTED)
+        calls = GatewayCalls(this) { push(it) }.also { it.start() }
         Thread(::acceptLoop, "gw-accept").start()
     }
 
@@ -134,6 +136,7 @@ class GatewayService : Service() {
         runCatching { server?.close() }
         runCatching { socket?.close() }
         runCatching { unregisterReceiver(sentReceiver) }
+        calls?.stop()
         writer.shutdownNow()
         simQueue.shutdown() // let already-accepted SMS finish
         Bus.emit("gateway", mapOf("running" to false, "connected" to false))
@@ -197,6 +200,8 @@ class GatewayService : Service() {
                     }
                     "ping" -> push(info())
                     "history" -> { val since = m.optLong("since"); Thread({ sendHistory(since) }, "gw-history").start() }
+                    "calllog" -> calls?.sendLog(m.optLong("since"))
+                    "callcmd" -> calls?.command(m)
                 }
             }
         } catch (e: Exception) {

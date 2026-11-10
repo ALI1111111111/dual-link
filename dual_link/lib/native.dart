@@ -44,6 +44,9 @@ class Native {
       (await _m.invokeMethod('requestPermissions', {'names': names})) as bool;
   static Future<void> openAppSettings() => _m.invokeMethod('openAppSettings');
 
+  static Future<bool> canFullScreen() async => (await _m.invokeMethod('canFullScreen')) as bool;
+  static Future<void> openFullScreenSettings() => _m.invokeMethod('openFullScreenSettings');
+
   static Future<bool> isIgnoringBattery() async => (await _m.invokeMethod('isIgnoringBattery')) as bool;
   static Future<void> requestIgnoreBattery() => _m.invokeMethod('requestIgnoreBattery');
 
@@ -59,14 +62,19 @@ class Native {
     return r == null ? null : Map<String, String?>.from(r as Map);
   }
 
-  /// Called while the app is open: notification tapped, or "Message" from Contacts / an sms: link.
-  static void onOpen(void Function(String address, String? body) cb) {
+  /// Called while the app is open. {action: sms|call|calls, address, body}
+  static void onOpen(void Function(Map<String, String?> req) cb) {
     _m.setMethodCallHandler((call) async {
-      if (call.method == 'openThread') cb(call.arguments as String, null);
-      if (call.method == 'openCompose') {
-        final a = Map<String, dynamic>.from(call.arguments as Map);
-        cb(a['address'] as String, a['body'] as String?);
-      }
+      if (call.method == 'openThread') cb({'action': 'sms', 'address': call.arguments as String});
+      if (call.method == 'openCompose') cb(Map<String, String?>.from(call.arguments as Map));
     });
   }
+
+  /// Phone A's call history: [{id, number, type (1 in, 2 out, 3 missed, 5 rejected), ts, dur, sim}].
+  static Future<List<Map<String, dynamic>>> calls() async =>
+      ((await _m.invokeMethod('calls')) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+  /// decline / answer / end / dial on Phone A. False if Phone A isn't connected.
+  static Future<bool> callCmd(String cmd, {String? number, int? sim}) async =>
+      (await _m.invokeMethod('callCmd', {'cmd': cmd, 'number': number, 'sim': sim})) as bool;
 }

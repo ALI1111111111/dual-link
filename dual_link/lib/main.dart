@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'native.dart';
+import 'screens/calls_screen.dart';
 import 'screens/client_screens.dart';
 import 'screens/gateway_screen.dart';
 import 'screens/pair_screen.dart';
@@ -12,9 +13,27 @@ void openThread(String address, String? body) {
   navKey.currentState?.push(MaterialPageRoute(builder: (_) => ThreadScreen(address: address, initialText: body)));
 }
 
+/// Routes a request from a notification, Contacts, an sms:/tel: link. {action: sms|call|calls, address, body}
+void openRequest(Map<String, String?> r) {
+  final address = r['address'];
+  switch (r['action']) {
+    case 'calls':
+      navKey.currentState?.popUntil((route) => route.isFirst);
+      clientTab.value = 1;
+    case 'call':
+      final ctx = navKey.currentContext;
+      if (address != null && ctx != null) {
+        clientTab.value = 1;
+        dialViaPhoneA(ctx, address);
+      }
+    default:
+      if (address != null) openThread(address, r['body']);
+  }
+}
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  Native.onOpen(openThread);
+  Native.onOpen(openRequest);
   runApp(const DualLinkApp());
 }
 
@@ -65,9 +84,7 @@ class _RootScreenState extends State<RootScreen> {
     // Launched from a notification, a contact's "Message" button or an sms: link.
     if (_mode == 'client') {
       final c = await Native.takeLaunchCompose();
-      if (c != null && c['address'] != null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => openThread(c['address']!, c['body']));
-      }
+      if (c != null) WidgetsBinding.instance.addPostFrameCallback((_) => openRequest(c));
     }
   }
 
@@ -78,7 +95,7 @@ class _RootScreenState extends State<RootScreen> {
       case 'gateway':
         return GatewayScreen(onReset: _load);
       case 'client':
-        return InboxScreen(onReset: _load);
+        return ClientHome(onReset: _load);
       default:
         return ModeSelectScreen(onChosen: _load);
     }
