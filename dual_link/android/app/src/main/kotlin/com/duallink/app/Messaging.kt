@@ -29,15 +29,26 @@ object SystemSms {
     private const val TAG = "DualLinkSms"
     private val worker = Executors.newSingleThreadExecutor()
 
-    fun isDefault(ctx: Context) = Telephony.Sms.getDefaultSmsPackage(ctx) == ctx.packageName
+    /**
+     * Asks the role system. The older Telephony.Sms.getDefaultSmsPackage() returns null on some
+     * phones without a SIM (seen on Galaxy Z Fold6, Android 17) even when Dual Link holds the role.
+     */
+    fun isDefault(ctx: Context): Boolean =
+        runCatching { ctx.getSystemService(android.app.role.RoleManager::class.java).isRoleHeld(android.app.role.RoleManager.ROLE_SMS) }
+            .getOrDefault(false) || Telephony.Sms.getDefaultSmsPackage(ctx) == ctx.packageName
 
     /** Copies every finished message (received / sent / failed) that isn't in the system database yet. */
     fun sync(ctx: Context) {
         val app = ctx.applicationContext
         worker.execute {
-            if (!isDefault(app)) return@execute
+            if (!isDefault(app)) {
+                Log.i(TAG, "sync skipped: default SMS app is ${Telephony.Sms.getDefaultSmsPackage(app)}")
+                return@execute
+            }
             val store = Store.get(app)
+            Log.i(TAG, "sync start: ${store.unmirrored(1000).size} to copy")
             var n = 0
+            var failed = 0
             while (true) {
                 val rows = store.unmirrored(200)
                 if (rows.isEmpty()) break
@@ -54,13 +65,13 @@ object SystemSms {
                             put(Telephony.Sms.TYPE, type); put(Telephony.Sms.READ, if (r.read) 1 else 0)
                             put(Telephony.Sms.SEEN, 1)
                         })
-                    }.getOrNull()
+                    }.onFailure { if (failed++ == 0) Log.w(TAG, "insert refused: $it") }.getOrNull()
                     // "-" marks a row the system refused, so it isn't retried forever.
                     store.setSysUri(r.id, uri?.toString() ?: "-")
                     n++
                 }
             }
-            if (n > 0) Log.i(TAG, "UAT mirrored n=$n")
+            if (n > 0) Log.i(TAG, "UAT mirrored n=$n failed=$failed")
         }
     }
 
