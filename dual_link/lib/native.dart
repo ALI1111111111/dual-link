@@ -47,10 +47,26 @@ class Native {
   static Future<bool> isIgnoringBattery() async => (await _m.invokeMethod('isIgnoringBattery')) as bool;
   static Future<void> requestIgnoreBattery() => _m.invokeMethod('requestIgnoreBattery');
 
-  /// Called when an SMS notification is tapped while the app is open.
-  static void onOpenThread(void Function(String address) cb) {
+  static Future<void> deleteThread(String address) => _m.invokeMethod('deleteThread', {'address': address});
+
+  /// Default SMS app (Phone B).
+  static Future<bool> isDefaultSms() async => (await _m.invokeMethod('isDefaultSms')) as bool;
+  static Future<void> requestDefaultSms() => _m.invokeMethod('requestDefaultSms');
+
+  /// {address, body} if the app was launched from a notification, Contacts or an sms: link.
+  static Future<Map<String, String?>?> takeLaunchCompose() async {
+    final r = await _m.invokeMethod('takeLaunchCompose');
+    return r == null ? null : Map<String, String?>.from(r as Map);
+  }
+
+  /// Called while the app is open: notification tapped, or "Message" from Contacts / an sms: link.
+  static void onOpen(void Function(String address, String? body) cb) {
     _m.setMethodCallHandler((call) async {
-      if (call.method == 'openThread') cb(call.arguments as String);
+      if (call.method == 'openThread') cb(call.arguments as String, null);
+      if (call.method == 'openCompose') {
+        final a = Map<String, dynamic>.from(call.arguments as Map);
+        cb(a['address'] as String, a['body'] as String?);
+      }
     });
   }
 }

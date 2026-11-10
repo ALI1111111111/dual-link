@@ -82,10 +82,31 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) _refresh();
   }
 
+  bool _isDefault = true;
+
   Future<void> _refresh() async {
     final s = await Native.state();
     final t = await Native.threads();
-    if (mounted) setState(() { _s = s; _threads = t; });
+    final d = await Native.isDefaultSms();
+    if (mounted) setState(() { _s = s; _threads = t; _isDefault = d; });
+  }
+
+  Future<void> _delete(String address) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Delete conversation?'),
+        content: Text('All messages with ${ContactBook.name(address) ?? address} will be deleted from this phone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await Native.deleteThread(address);
+      _refresh();
+    }
   }
 
   Future<void> _open(String address) async {
@@ -136,6 +157,16 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
                   : enabled ? 'Looking for Phone A on Wi-Fi…' : 'Disconnected'),
             ),
           ),
+          if (!_isDefault)
+            Card(
+              margin: const EdgeInsets.all(12),
+              child: ListTile(
+                leading: const Icon(Icons.sms),
+                title: const Text('Make Dual Link your SMS app'),
+                subtitle: const Text('Messages go into the phone\'s SMS inbox, and Contacts, links and other apps open Dual Link to text.'),
+                trailing: FilledButton(onPressed: Native.requestDefaultSms, child: const Text('Set')),
+              ),
+            ),
           Expanded(
             child: _threads.isEmpty
                 ? const Center(child: Text('No messages yet'))
@@ -160,6 +191,7 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
                           ),
                           trailing: Text(_time(t['ts'] as int)),
                           onTap: () => _open(address),
+                          onLongPress: () => _delete(address),
                         );
                       },
                     ),
@@ -242,8 +274,9 @@ class _ContactPickerScreenState extends State<ContactPickerScreen> {
 }
 
 class ThreadScreen extends StatefulWidget {
-  const ThreadScreen({super.key, required this.address});
+  const ThreadScreen({super.key, required this.address, this.initialText});
   final String address;
+  final String? initialText;
 
   @override
   State<ThreadScreen> createState() => _ThreadScreenState();
@@ -259,6 +292,8 @@ class _ThreadScreenState extends State<ThreadScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialText != null) _input.text = widget.initialText!;
+    ContactBook.load(ask: false).then((_) => mounted ? setState(() {}) : null);
     _refresh();
     _sub = Native.events.listen((e) {
       if (e['type'] == 'sms' || e['type'] == 'status' || e['type'] == 'client') _refresh();

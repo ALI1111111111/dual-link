@@ -2,6 +2,7 @@ package com.duallink.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -25,6 +26,9 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Launched from Contacts / a link / a notification: Flutter asks for this once it starts.
+        pendingCompose = composeFrom(intent)
+            ?: intent?.getStringExtra("address")?.let { mapOf("address" to it, "body" to null) }
         // Release builds: no screenshots / screen recording of SMS or the pairing QR code.
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
             window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
@@ -110,7 +114,31 @@ class MainActivity : FlutterActivity() {
 
                         "threads" -> result.success(store.threads())
                         "messages" -> result.success(store.messages(call.argument<String>("address")!!))
-                        "markRead" -> { store.markRead(call.argument<String>("address")!!); result.success(null) }
+                        "markRead" -> {
+                            val a = call.argument<String>("address")!!
+                            SystemSms.markRead(this@MainActivity, store.markRead(a))
+                            Notifier.cancel(this@MainActivity, phoneKey(a))
+                            result.success(null)
+                        }
+
+                        "deleteThread" -> {
+                            SystemSms.delete(this@MainActivity, store.deleteThread(call.argument<String>("address")!!))
+                            result.success(null)
+                        }
+
+                        "isDefaultSms" -> result.success(SystemSms.isDefault(this@MainActivity))
+
+                        "requestDefaultSms" -> {
+                            val rm = getSystemService(RoleManager::class.java)
+                            if (rm.isRoleAvailable(RoleManager.ROLE_SMS) && !rm.isRoleHeld(RoleManager.ROLE_SMS)) {
+                                @Suppress("DEPRECATION")
+                                startActivityForResult(rm.createRequestRoleIntent(RoleManager.ROLE_SMS), 78)
+                            }
+                            result.success(null)
+                        }
+
+                        /** A compose request (number + text) that launched the app, if any. */
+                        "takeLaunchCompose" -> { result.success(pendingCompose); pendingCompose = null }
 
                         "requestPermissions" -> {
                             val wanted = call.argument<List<String>>("names")!!.flatMap { permissionsFor(it) }
@@ -205,9 +233,32 @@ class MainActivity : FlutterActivity() {
         permResult = null
     }
 
-    /** Tapping an SMS notification opens that conversation. */
+    private var pendingCompose: Map<String, String?>? = null
+
+    /** sms:/smsto: from Contacts, links or other apps -> {address, body}. */
+    private fun composeFrom(i: Intent?): Map<String, String?>? {
+        val data = i?.data ?: return null
+        if (data.scheme !in setOf("sms", "smsto", "mms", "mmsto")) return null
+        val to = Uri.decode(data.schemeSpecificPart.substringBefore('?')).split(';', ',').firstOrNull()?.trim()
+        if (to.isNullOrEmpty()) return null
+        val body = i.getStringExtra("sms_body") ?: i.getStringExtra(Intent.EXTRA_TEXT)
+            ?: data.getQueryParameterSafe("body")
+        return mapOf("address" to phoneKey(to), "body" to body)
+    }
+
+    private fun Uri.getQueryParameterSafe(name: String): String? =
+        runCatching { Uri.parse("x://y?" + (schemeSpecificPart.substringAfter('?', ""))).getQueryParameter(name) }.getOrNull()
+
+    override fun onResume() {
+        super.onResume()
+        SystemSms.sync(this) // e.g. just became the default SMS app: copy existing messages in
+        Bus.emit("client", emptyMap())
+    }
+
+    /** Tapping an SMS notification, a contact's "Message" button or an sms: link while open. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        composeFrom(intent)?.let { methods?.invokeMethod("openCompose", it); return }
         intent.getStringExtra("address")?.let { methods?.invokeMethod("openThread", it) }
     }
 }

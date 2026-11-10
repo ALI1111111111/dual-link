@@ -31,6 +31,12 @@ class TestHooks : BroadcastReceiver() {
             "rotate" -> { p.key = Crypto.newKey(); GatewayService.instance?.disconnectClient(); Log.i("DualLinkTest", "UAT rotated") }
             "stopgw" -> GatewayService.stop(ctx)
             "startgw" -> GatewayService.start(ctx)
+            "syscount" -> {
+                val n = runCatching {
+                    ctx.contentResolver.query(android.provider.Telephony.Sms.CONTENT_URI, arrayOf("_id"), null, null, null)?.use { it.count }
+                }.getOrNull() ?: -1
+                Log.i("DualLinkTest", "UAT syscount n=$n")
+            }
             "count" -> {
                 val c = Store.get(ctx).readableDatabase.rawQuery(
                     // in/sent = this run's live messages (history rows start with "h-");

@@ -77,6 +77,7 @@ class ClientService : Service() {
         ServiceCompat.startForeground(this, 2, notification("Connecting to Phone A…"), type)
         instance = this
         watchWifi()
+        SystemSms.sync(this) // catch up if Dual Link became the default SMS app since last run
         Thread(::connectLoop, "client-conn").start()
         Thread(::pingLoop, "client-ping").start()
     }
@@ -190,7 +191,8 @@ class ClientService : Service() {
                 write(JSONObject().put("t", "ack").put("id", id)) // ack only after it is saved
                 Log.i(TAG, "UAT sms_received id=$id new=$isNew")
                 if (isNew) {
-                    showSms(phoneKey(from), body)
+                    Notifier.sms(this, phoneKey(from), body)
+                    SystemSms.sync(this)
                     Bus.emit("sms", mapOf("address" to phoneKey(from)))
                 }
             }
@@ -198,6 +200,7 @@ class ClientService : Service() {
                 m.getLong("ts"), m.getInt("dir"), m.optInt("sim", -1))
             "hist_done" -> {
                 Log.i(TAG, "UAT history_done n=${m.optInt("n")}")
+                SystemSms.sync(this)
                 Bus.emit("sms", emptyMap())
             }
             "status" -> {
@@ -207,6 +210,7 @@ class ClientService : Service() {
                 Store.get(this).setStatus(id, state, reason)
                 Log.i(TAG, "UAT send_status id=$id state=$state${reason?.let { " reason=$it" } ?: ""}")
                 Bus.emit("status", mapOf("id" to id, "state" to state))
+                if (state == "sent" || state == "failed") SystemSms.sync(this)
             }
             "info" -> {
                 gatewayBattery = m.optInt("battery")
@@ -284,26 +288,6 @@ class ClientService : Service() {
         val d = discovery ?: return
         discovery = null
         runCatching { nsd?.stopServiceDiscovery(d) }
-    }
-
-    private fun showSms(from: String, body: String) {
-        val open = PendingIntent.getActivity(this, from.hashCode(),
-            Intent(this, MainActivity::class.java).putExtra("address", from),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val n = NotificationCompat.Builder(this, CH_SMS)
-            .setSmallIcon(R.drawable.ic_stat_link)
-            .setContentTitle(from)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE) // hide text on lock screen
-            .setPublicVersion(NotificationCompat.Builder(this, CH_SMS)
-                .setSmallIcon(R.drawable.ic_stat_link).setContentTitle("New message").build())
-            .setAutoCancel(true)
-            .setContentIntent(open)
-            .build()
-        runCatching { NotificationManagerCompat.from(this).notify(from.hashCode(), n) }
     }
 
     private fun notification(text: String): Notification {

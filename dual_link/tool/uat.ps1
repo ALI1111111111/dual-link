@@ -20,7 +20,7 @@ $results = New-Object System.Collections.Generic.List[object]
 # No named params here: PowerShell would treat adb flags like -d as short for a param name.
 function Adb { $dev, $rest = $args; $argv = @('-s', $dev) + @($rest); & $adb $argv 2>$null }
 function Hook($dev, [string]$extras) { Adb $dev shell "am broadcast -n $pkg/.TestHooks $extras" | Out-Null }
-function Log($dev) { (Adb $dev logcat -d -v time -s DualLinkClient:I DualLinkGateway:I DualLinkTest:I) -join "`n" }
+function Log($dev) { (Adb $dev logcat -d -v time -s DualLinkClient:I DualLinkGateway:I DualLinkTest:I DualLinkSms:I) -join "`n" }
 function Count($dev, [string]$pattern) { ([regex]::Matches((Log $dev), $pattern)).Count }
 
 # Waits until $pattern appears at least $n times in the device log. Returns seconds taken, or -1.
@@ -220,6 +220,23 @@ $t = WaitFor $A 'reason=sim_not_available' 1 10
 Check 'T15 Sending on a SIM that does not exist is refused' ($t -ge 0)
 $t = WaitFor $B 'UAT send_status id=\S+ state=failed reason=sim_not_available' 1 10
 Check 'T15b Phone B is told why it failed' ($t -ge 0)
+
+# ---------------------------------------------------------------- T16-T19 Phone B as the default SMS app
+$roleOut = (Adb $B shell cmd role add-role-holder android.app.role.SMS $pkg 0) -join ' '
+$holder = (Adb $B shell cmd role get-role-holders android.app.role.SMS) -join ' '
+Check 'T16 Android accepts Dual Link as the default SMS app' ($holder -match $pkg) "holder: $holder $roleOut"
+Adb $B shell monkey -p $pkg -c android.intent.category.LAUNCHER 1 | Out-Null   # app resume copies existing messages in
+$t = WaitFor $B 'UAT mirrored n=\d+' 1 20
+Check 'T17 Existing messages copied into the phone''s SMS database' ($t -ge 0) ([regex]::Match((Log $B), 'UAT mirrored n=\d+').Value)
+$m0 = Count $B 'UAT mirrored'
+SmsIn '03001234567' 'UAT after default'
+$t = WaitFor $B 'UAT mirrored n=\d+' ($m0 + 1) 45
+Hook $B '--es cmd syscount'
+$null = WaitFor $B 'UAT syscount' 1 5
+$sys = [regex]::Match((Log $B), 'UAT syscount n=(-?\d+)').Groups[1].Value
+Check 'T18 New SMS lands in the phone''s SMS inbox in real time' ($t -ge 0 -and [int]$sys -ge 1) "system SMS rows: $sys"
+$res = (Adb $B shell cmd package resolve-activity --brief -a android.intent.action.SENDTO -d sms:5556) -join ' '
+Check 'T19 "Message" / sms: links open Dual Link' ($res -match $pkg) $res.Trim()
 
 # ---------------------------------------------------------------- summary
 Write-Host ""

@@ -72,7 +72,10 @@ class Prefs(ctx: Context) {
  * (so a retry after a dropped connection never sends the same SMS twice).
  * Client: `messages` = local inbox/outbox.
  */
-class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.db", null, 2) {
+class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.db", null, 3) {
+    /** A finished message waiting to be copied into Android's SMS database. */
+    data class Row(val id: String, val address: String, val body: String, val ts: Long, val status: String, val read: Boolean)
+
     companion object {
         @Volatile private var inst: Store? = null
         fun get(ctx: Context) = inst ?: synchronized(this) { inst ?: Store(ctx.applicationContext).also { inst = it } }
@@ -84,7 +87,7 @@ class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.
         db.execSQL(
             "CREATE TABLE messages(id TEXT PRIMARY KEY, address TEXT NOT NULL, body TEXT NOT NULL, " +
                 "ts INTEGER NOT NULL, dir INTEGER NOT NULL, status TEXT NOT NULL, read INTEGER NOT NULL DEFAULT 0, " +
-                "sim INTEGER NOT NULL DEFAULT -1, reason TEXT)"
+                "sim INTEGER NOT NULL DEFAULT -1, reason TEXT, sys_uri TEXT)"
         )
         db.execSQL("CREATE INDEX idx_msg_addr ON messages(address, ts)")
     }
@@ -95,7 +98,36 @@ class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.
             db.execSQL("ALTER TABLE messages ADD COLUMN sim INTEGER NOT NULL DEFAULT -1")
             db.execSQL("ALTER TABLE messages ADD COLUMN reason TEXT")
         }
+        if (o < 3) db.execSQL("ALTER TABLE messages ADD COLUMN sys_uri TEXT")
     }
+
+    // ---- default SMS app (Phone B) ----
+    fun unmirrored(limit: Int): List<Row> = readableDatabase.rawQuery(
+        "SELECT id,address,body,ts,status,read FROM messages WHERE sys_uri IS NULL " +
+            "AND status IN ('received','sent','failed') ORDER BY ts LIMIT $limit", null
+    ).use { c ->
+        buildList { while (c.moveToNext()) add(Row(c.getString(0), c.getString(1), c.getString(2), c.getLong(3), c.getString(4), c.getInt(5) == 1)) }
+    }
+
+    fun setSysUri(id: String, uri: String) =
+        writableDatabase.update("messages", ContentValues().apply { put("sys_uri", uri) }, "id=?", arrayOf(id))
+
+    /** SIM this person last texted on (so replies go out on the same SIM), or -1. */
+    fun lastIncomingSim(address: String): Int = readableDatabase.rawQuery(
+        "SELECT sim FROM messages WHERE address=? AND dir=0 AND sim >= 0 ORDER BY ts DESC LIMIT 1", arrayOf(phoneKey(address))
+    ).use { if (it.moveToFirst()) it.getInt(0) else -1 }
+
+    /** Deletes a conversation; returns the system SMS rows to delete as well. */
+    fun deleteThread(address: String): List<String> {
+        val key = phoneKey(address)
+        val uris = sysUris("address=?", arrayOf(key))
+        writableDatabase.delete("messages", "address=?", arrayOf(key))
+        return uris
+    }
+
+    private fun sysUris(where: String, args: Array<String>): List<String> = readableDatabase.rawQuery(
+        "SELECT sys_uri FROM messages WHERE sys_uri LIKE 'content://%' AND $where", args
+    ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
 
     // ---- gateway ----
     fun addPending(id: String, json: JSONObject) {
@@ -161,8 +193,13 @@ class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.
     fun setStatus(id: String, status: String, reason: String? = null) =
         writableDatabase.update("messages", ContentValues().apply { put("status", status); put("reason", reason) }, "id=?", arrayOf(id))
 
-    fun markRead(address: String) =
-        writableDatabase.update("messages", ContentValues().apply { put("read", 1) }, "address=?", arrayOf(phoneKey(address)))
+    /** Marks a conversation read; returns the system SMS rows that need the same. */
+    fun markRead(address: String): List<String> {
+        val key = phoneKey(address)
+        val uris = sysUris("address=? AND read=0", arrayOf(key))
+        writableDatabase.update("messages", ContentValues().apply { put("read", 1) }, "address=? AND read=0", arrayOf(key))
+        return uris
+    }
 
     /** Not yet confirmed by the gateway. Re-sending is safe: the gateway ignores ids it already handled. */
     fun unconfirmedOutgoing(): List<JSONObject> =

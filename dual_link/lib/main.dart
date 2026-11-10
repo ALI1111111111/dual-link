@@ -7,11 +7,14 @@ import 'screens/pair_screen.dart';
 
 final navKey = GlobalKey<NavigatorState>();
 
+/// Opens a conversation, optionally with text already typed (e.g. from an sms: link).
+void openThread(String address, String? body) {
+  navKey.currentState?.push(MaterialPageRoute(builder: (_) => ThreadScreen(address: address, initialText: body)));
+}
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  Native.onOpenThread((address) {
-    navKey.currentState?.push(MaterialPageRoute(builder: (_) => ThreadScreen(address: address)));
-  });
+  Native.onOpen(openThread);
   runApp(const DualLinkApp());
 }
 
@@ -59,6 +62,13 @@ class _RootScreenState extends State<RootScreen> {
       _mode = s['mode'] as String?;
       _loading = false;
     });
+    // Launched from a notification, a contact's "Message" button or an sms: link.
+    if (_mode == 'client') {
+      final c = await Native.takeLaunchCompose();
+      if (c != null && c['address'] != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => openThread(c['address']!, c['body']));
+      }
+    }
   }
 
   @override
