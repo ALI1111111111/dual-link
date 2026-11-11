@@ -39,6 +39,7 @@ class TestHooks : BroadcastReceiver() {
                 }.getOrNull() ?: -1
                 Log.i("DualLinkTest", "UAT syscount n=$n")
             }
+            "callstate" -> Log.i("DualLinkTest", "UAT callstate=${ClientCalls.current?.get("state") ?: "none"}")
             "count" -> {
                 val c = Store.get(ctx).readableDatabase.rawQuery(
                     // in/sent = this run's live messages (history rows start with "h-");

@@ -285,7 +285,11 @@ class MainActivity : FlutterActivity() {
 
     /** sms:/smsto: from Contacts, links or other apps -> {address, body}. */
     private fun composeFrom(i: Intent?): Map<String, String?>? {
-        if (i?.getBooleanExtra("answerHere", false) == true) return mapOf("action" to "answerHere", "address" to i.getStringExtra("address"))
+        // Answer only if the intent came from our own notification (secret token) and a call is ringing.
+        if (i?.getBooleanExtra("answerHere", false) == true) {
+            val ok = i.getStringExtra("token") == ClientCalls.launchToken && ClientCalls.current?.get("state") == "ringing"
+            return mapOf("action" to if (ok) "answerHere" else "calls", "address" to i.getStringExtra("address"))
+        }
         if (i?.getBooleanExtra("callScreen", false) == true) return mapOf("action" to "calls", "address" to i.getStringExtra("address"))
         val data = i?.data ?: return null
         if (data.scheme == "tel") {

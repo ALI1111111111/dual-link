@@ -191,8 +191,11 @@ class GatewayService : Service() {
             update("Connected to Phone B")
             push(info())
             push(JSONObject().put("t", "voice_status").put("s", voice?.helperStatus ?: "not_started"))
+            calls?.let { push(it.snapshot()) } // re-sync: clears a ghost call on Phone B
             Store.get(this).allPending().forEach { push(it) }
             while (true) {
+                // In a call Phone B talks every 2 s; 8 s of silence = hung link (fail fast).
+                s.soTimeout = if (calls?.inCall == true) 8_000 else 120_000
                 val m = l.read() ?: break
                 when (m.optString("t")) {
                     "ack" -> {
@@ -220,6 +223,8 @@ class GatewayService : Service() {
             if (socket === s) {
                 socket = null; link = null; clientConnected = false
                 Log.i(TAG, "UAT client_disconnected")
+                // Phone B is gone: leave redirect mode so the call continues on this phone's own mic/earpiece.
+                voice?.fromClient(JSONObject().put("t", "voice").put("on", false))
                 update("Waiting for Phone B…")
             }
         }

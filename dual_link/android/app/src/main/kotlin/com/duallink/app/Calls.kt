@@ -64,6 +64,20 @@ class GatewayCalls(private val ctx: Context, private val push: (JSONObject) -> U
 
     fun stop() { runCatching { ctx.unregisterReceiver(receiver) } }
 
+    val inCall: Boolean get() = state != TelephonyManager.EXTRA_STATE_IDLE
+
+    /** Current call state for a (re)connecting Phone B, so it never keeps showing a call that ended. */
+    @Synchronized
+    fun snapshot(): JSONObject {
+        val st = when (state) {
+            TelephonyManager.EXTRA_STATE_RINGING -> "ringing"
+            TelephonyManager.EXTRA_STATE_OFFHOOK -> "active"
+            else -> "ended"
+        }
+        return JSONObject().put("t", "call").put("id", callId).put("state", st).put("number", number ?: "")
+            .put("sim", sim).put("ts", System.currentTimeMillis()).put("missed", false).put("sync", true)
+    }
+
     private fun granted(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
 
     private fun event(st: String, extra: JSONObject.() -> Unit = {}) {
@@ -182,6 +196,9 @@ object ClientCalls {
     const val ACTION_ANSWER = "com.duallink.app.CALL_ANSWER"
     const val ACTION_END = "com.duallink.app.CALL_END"
 
+    /** Random per process; only our own notification knows it, so other apps can't trigger "answer". */
+    val launchToken: String = Crypto.newKey()
+
     /** The call currently ringing / active on Phone A, for the UI. */
     @Volatile var current: Map<String, Any?>? = null
 
@@ -230,6 +247,7 @@ object ClientCalls {
             // Opens the app (needed for the mic), which answers and starts audio on this phone.
             .addAction(R.drawable.ic_stat_link, "Answer here", PendingIntent.getActivity(ctx, 8,
                 Intent(ctx, MainActivity::class.java).putExtra("answerHere", true).putExtra("address", number)
+                    .putExtra("token", launchToken)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
             .build().apply { flags = flags or android.app.Notification.FLAG_INSISTENT } // keep ringing

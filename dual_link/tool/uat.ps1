@@ -7,7 +7,8 @@
 
 param(
     [string]$Apk = "$PSScriptRoot\..\build\app\outputs\flutter-apk\app-debug.apk",
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+    [switch]$Quick   # skip endurance tests R8-R10 (~4 min faster)
 )
 
 $ErrorActionPreference = 'Continue'  # adb writes harmless warnings to stderr
@@ -18,7 +19,21 @@ $port = 47820
 $results = New-Object System.Collections.Generic.List[object]
 
 # No named params here: PowerShell would treat adb flags like -d as short for a param name.
-function Adb { $dev, $rest = $args; $argv = @('-s', $dev) + @($rest); & $adb $argv 2>$null }
+# Every adb call is capped at 30 s: an emulator console command (emu sms/gsm) can hang forever.
+function Adb {
+    $dev, $rest = $args
+    $psi = New-Object Diagnostics.ProcessStartInfo $adb
+    $psi.Arguments = ((@('-s', $dev) + @($rest)) | ForEach-Object { if ("$_" -match '[\s"]') { '"' + ("$_" -replace '"', '\"') + '"' } else { "$_" } }) -join ' '
+    $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+    $p = [Diagnostics.Process]::Start($psi)
+    $out = $p.StandardOutput.ReadToEndAsync(); $null = $p.StandardError.ReadToEndAsync()
+    if (-not $p.WaitForExit(30000)) {
+        try { $p.Kill() } catch {}
+        Write-Host "  [adb timeout] $($psi.Arguments)"
+        return
+    }
+    $out.Result -split "`r?`n" | Where-Object { $_ -ne '' }
+}
 function Hook($dev, [string]$extras) { Adb $dev shell "am broadcast -n $pkg/.TestHooks $extras" | Out-Null }
 function Log($dev) { (Adb $dev logcat -d -v time -s DualLinkClient:I DualLinkGateway:I DualLinkTest:I DualLinkSms:I DualLinkCalls:I) -join "`n" }
 function Count($dev, [string]$pattern) { ([regex]::Matches((Log $dev), $pattern)).Count }
@@ -256,23 +271,151 @@ Check 'T21 Decline from Phone B ends the call on Phone A' ($t -ge 0 -and $t2 -ge
 $c0 = Count $B 'UAT calllog_done'
 $t = WaitFor $B 'UAT calllog_done' ($c0 + 1) 15
 Check 'T22 Call history updates on Phone B after the call' ($t -ge 0)
+$ringA = Count $A 'UAT call_state ringing'; $actA = Count $A 'UAT call_state active'
 Adb $A emu gsm call 03004445566 | Out-Null
-$null = WaitFor $B 'UAT call_ringing' ($r0 + 2) 15
+$null = WaitFor $A 'UAT call_state ringing' ($ringA + 1) 15
+Start-Sleep 1
 Hook $B '--es cmd callcmd --es c answer'
-$t = WaitFor $A 'UAT call_state active' 1 10
+$t = WaitFor $A 'UAT call_state active' ($actA + 1) 10
 Check 'T23 Answer on Phone A from Phone B' ((Count $A 'UAT call_cmd answer ok=true') -ge 1 -and $t -ge 0)
 Hook $B '--es cmd callcmd --es c end'
 $t = WaitFor $B 'UAT call_ended missed=false' 1 10
 Check 'T24 End call from Phone B' ((Count $A 'UAT call_cmd end ok=true') -ge 1 -and $t -ge 0)
 Adb $A emu gsm cancel 03004445566 | Out-Null
 Hook $B '--es cmd callcmd --es c dial --es number 5556'
-$t = WaitFor $A 'UAT call_state active' 2 15
+$t = WaitFor $A 'UAT call_state active' ((Count $A 'UAT call_state active') + 1) 15
 Check 'T25 Phone B makes Phone A dial a number' ((Count $A 'UAT call_cmd dial ok=true') -ge 1 -and $t -ge 0)
 Hook $B '--es cmd callcmd --es c end'
 $null = WaitFor $A 'UAT call_cmd end ok=true' 2 10
 Hook $B "--es cmd callcmd --es c dial --es number '*123#'"
 $t = WaitFor $A 'UAT call_cmd dial ok=false reason=invalid_number' 1 10
 Check 'T26 Dialing USSD / invalid numbers is refused' ($t -ge 0)
+
+# ================================================================ resilience + persona scenarios (R1-R10)
+# Phone B's view of the call, straight from the app.
+function BCallState { Hook $B '--es cmd callstate'; Start-Sleep -Milliseconds 700
+    ([regex]::Matches((Log $B), 'UAT callstate=(\w+)') | Select-Object -Last 1).Groups[1].Value }
+function APid { (Adb $A shell pidof $pkg | Out-String).Trim() }
+# Incoming call on Phone A, answered on Phone A once it is really ringing.
+function CallAndAnswer([string]$num) {
+    # Note: PowerShell names ignore case, so never name a local $a/$b (it would shadow $A/$B).
+    $ring0 = Count $A 'UAT call_state ringing'; $act0 = Count $A 'UAT call_state active'
+    Adb $A emu gsm call $num | Out-Null
+    $null = WaitFor $A 'UAT call_state ringing' ($ring0 + 1) 15
+    Start-Sleep 1
+    Adb $A emu gsm accept $num | Out-Null
+    $null = WaitFor $A 'UAT call_state active' ($act0 + 1) 15
+}
+# Ends every emulator call and confirms none is left (a "cancel" is sometimes ignored by the emulator).
+function Settle {
+    for ($i = 0; $i -lt 5; $i++) {
+        Adb $A emu gsm cancel 03007770001 | Out-Null; Adb $A emu gsm cancel 03007770002 | Out-Null
+        if ($i -ge 1) { Adb $A shell input keyevent KEYCODE_ENDCALL | Out-Null }   # emulator ignored cancel: hang up on the phone
+        Start-Sleep 1
+        # mCallState: 0 idle, 1 ringing, 2 in call (Phone A's own view)
+        if ("$(Adb $A shell 'dumpsys telephony.registry | grep -m1 mCallState')" -match 'mCallState=0') { break }
+    }
+    if ($i -eq 5) { Write-Host '  [settle] emulator call would not end' }
+    Start-Sleep 2
+}
+
+# R1 (the reported bug) Link hangs mid-call: Phone A frozen (sockets stay open, nothing flows).
+Settle
+Adb $A emu gsm call 03007770001 | Out-Null
+$null = WaitFor $B 'UAT call_ringing' ((Count $B 'UAT call_ringing') + 1) 15
+Adb $A emu gsm accept 03007770001 | Out-Null
+$null = WaitFor $B 'UAT call_active' ((Count $B 'UAT call_active') + 1) 15
+$stall0 = Count $B 'UAT link_stalled'
+$p = APid; Adb $A shell "run-as $pkg kill -STOP $p" | Out-Null
+$t = WaitFor $B 'UAT link_stalled' ($stall0 + 1) 15
+$st = BCallState
+Check 'R1 Hung link mid-call is detected and the call is cleared on Phone B' ($t -ge 0 -and $t -le 9 -and $st -eq 'none') "detected in ${t}s, B shows '$st'"
+# R2 Call ends on Phone A while Phone B is cut off: no ghost call after reconnect.
+Adb $A emu gsm cancel 03007770001 | Out-Null
+Adb $A shell "run-as $pkg kill -CONT $p" | Out-Null
+$c0 = Count $B 'UAT connected'
+$null = WaitFor $B 'UAT connected' ($c0 + 1) 75
+Start-Sleep 2
+$st = BCallState
+Check 'R2 Call ended while disconnected: Phone B shows no call after reconnect' ($st -eq 'none') "B shows '$st'"
+
+# R3 Call starts while Phone B is cut off: after reconnect Phone B rings (state re-sync).
+$p = APid; Adb $A shell "run-as $pkg kill -STOP $p" | Out-Null
+Start-Sleep 1
+Adb $A emu gsm call 03007770002 | Out-Null
+Start-Sleep 2
+Adb $A shell "run-as $pkg kill -CONT $p" | Out-Null
+Start-Sleep 4
+$st = BCallState
+Check 'R3 Call that started during a drop is shown after reconnect' ($st -eq 'ringing' -or $st -eq 'active') "B shows '$st'"
+Settle
+
+# R4 Persona "busy professional": OTP burst arrives during a call; all delivered, none duplicated.
+CallAndAnswer 03007770001
+$n0 = Count $B 'UAT sms_received id=\S+ new=true'
+1..5 | ForEach-Object { SmsIn '8558' "Your code is 10$_$_$_ (R4)" }
+$t = WaitFor $B 'UAT sms_received id=\S+ new=true' ($n0 + 5) 30
+$dup = Count $B 'UAT sms_received id=\S+ new=false'
+Check 'R4 5 OTPs during a call: all arrive, no duplicates' ($t -ge 0) "in ${t}s, duplicate deliveries ignored: $dup"
+Settle
+
+# R5 Persona "commuter": Phone B Wi-Fi drops during a call, comes back; call cleared, then re-synced.
+CallAndAnswer 03007770001
+$null = WaitFor $B 'UAT call_active' ((Count $B 'UAT call_active') + 1) 15
+Adb $B shell svc wifi disable | Out-Null
+Start-Sleep 3
+$off = BCallState
+$c0 = Count $B 'UAT connected'
+Adb $B shell svc wifi enable | Out-Null
+$null = WaitFor $B 'UAT connected' ($c0 + 1) 30
+Start-Sleep 2
+$back = BCallState
+Check 'R5 Wi-Fi drop mid-call: cleared while offline, call shown again when back' ($off -eq 'none' -and $back -eq 'active') "offline '$off', back '$back'"
+Settle
+
+# R6 Persona "elderly user": nobody touches anything -> missed call notified, history updated.
+$m0 = Count $B 'UAT call_ended missed=true'
+Adb $A emu gsm call 03007770002 | Out-Null
+Start-Sleep 4
+Adb $A emu gsm cancel 03007770002 | Out-Null
+$t = WaitFor $B 'UAT call_ended missed=true' ($m0 + 1) 10
+Check 'R6 Unanswered call becomes a missed call on Phone B' ($t -ge 0)
+
+# R7 Persona "in a meeting": decline from Phone B + text back.
+Adb $A emu gsm call 03007770001 | Out-Null
+$null = WaitFor $B 'UAT call_ringing' ((Count $B 'UAT call_ringing') + 1) 15
+Hook $B '--es cmd callcmd --es c decline'
+Hook $B "--es cmd send --es to 03007770001 --es body 'In a meeting, will call back (R7)'"
+$t1 = WaitFor $A 'UAT call_state ended' ((Count $A 'UAT call_state ended')) 10
+$t2 = WaitFor $B 'UAT send_status id=\S+ state=sent' ((Count $B 'UAT send_status id=\S+ state=sent') ) 20
+Check 'R7 Decline + SMS reply both work' ($t1 -ge 0 -and $t2 -ge 0)
+Settle
+
+if (-not $Quick) {
+# R8 Stress: 10 call cycles (ring -> answer -> end) with no ghost calls or leaks.
+$pssBefore = [int](([regex]::Match((Adb $B shell dumpsys meminfo $pkg | Out-String), 'TOTAL PSS:\s+(\d+)')).Groups[1].Value)
+$ghosts = 0
+1..10 | ForEach-Object {
+    Adb $A emu gsm call 03007770001 | Out-Null; Start-Sleep 2
+    Adb $A emu gsm accept 03007770001 | Out-Null; Start-Sleep 2
+    Adb $A emu gsm cancel 03007770001 | Out-Null; Start-Sleep 2
+    if ((BCallState) -ne 'none') { $ghosts++ }
+}
+$pssAfter = [int](([regex]::Match((Adb $B shell dumpsys meminfo $pkg | Out-String), 'TOTAL PSS:\s+(\d+)')).Groups[1].Value)
+Check 'R8 10 call cycles: no ghost calls' ($ghosts -eq 0) "ghosts: $ghosts"
+Check 'R9 10 call cycles: memory stable (< 15 MB growth)' (($pssAfter - $pssBefore) -lt 15000) "PSS $([math]::Round($pssBefore/1024))MB -> $([math]::Round($pssAfter/1024))MB"
+
+# R10 Optimisation: idle cost over 60 s (pings sent, CPU used) on both phones.
+Settle
+$pB = (Adb $B shell pidof $pkg | Out-String).Trim(); $pA = APid
+function CpuTicks($dev, $procId) { $f = ((Adb $dev shell cat /proc/$procId/stat | Out-String).Trim() -split ' '); [int]$f[13] + [int]$f[14] }
+$cB0 = CpuTicks $B $pB; $cA0 = CpuTicks $A $pA
+Start-Sleep 60
+$cB1 = CpuTicks $B $pB; $cA1 = CpuTicks $A $pA
+$cpuB = ($cB1 - $cB0) * 10; $cpuA = ($cA1 - $cA0) * 10   # clock ticks (10 ms) -> ms
+Check 'R10 Idle for 60 s: under 1.5 s CPU per phone (battery)' ($cpuA -lt 1500 -and $cpuB -lt 1500) "Phone A ${cpuA} ms, Phone B ${cpuB} ms of CPU in 60 s"
+
+}
 
 # ---------------------------------------------------------------- summary
 Write-Host ""

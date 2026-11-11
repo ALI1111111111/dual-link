@@ -184,10 +184,29 @@ class ClientService : Service() {
         }
     }
 
+    @Volatile private var lastRx = 0L
+
+    /**
+     * Idle: tiny ping every 45 s (battery). During a call: every 2 s, and if Phone A has been
+     * silent for 6 s the link is treated as hung and dropped, so a dead link can never leave a
+     * "ghost" call on this phone. Reconnect then re-syncs the real call state.
+     */
     private fun pingLoop() {
+        var lastPing = 0L
         while (running) {
-            Thread.sleep(PING_MS)
-            if (link != null) write(JSONObject().put("t", "ping"))
+            Thread.sleep(1_000)
+            val inCall = ClientCalls.current != null || ClientVoice.active
+            val now = System.currentTimeMillis()
+            if (link == null) continue
+            if (inCall && lastRx > 0 && now - lastRx > 6_000) {
+                Log.i(TAG, "UAT link_stalled ${now - lastRx}ms")
+                runCatching { socket?.close() }
+                continue
+            }
+            if (now - lastPing >= if (inCall) 2_000L else PING_MS) {
+                lastPing = now
+                write(JSONObject().put("t", "ping"))
+            }
         }
     }
 
@@ -202,6 +221,7 @@ class ClientService : Service() {
     }
 
     private fun handle(m: JSONObject) {
+        lastRx = System.currentTimeMillis()
         when (m.optString("t")) {
             "sms" -> {
                 val id = m.getString("id")
@@ -283,6 +303,7 @@ class ClientService : Service() {
     private fun setConnected(c: Boolean) {
         if (connected == c) return
         connected = c
+        if (c) lastRx = System.currentTimeMillis()
         Log.i(TAG, if (c) "UAT connected" else "UAT disconnected")
         if (!c) ClientVoice.stop(this)
         if (!c && ClientCalls.current != null) { // lost Phone A mid-call: stop ringing, we can't know the outcome
