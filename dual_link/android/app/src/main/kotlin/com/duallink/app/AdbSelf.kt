@@ -117,6 +117,7 @@ object AdbSelf {
         "devOptions" to devOptionsOn(ctx),
         "wirelessDebugging" to wirelessDebuggingOn(ctx),
         "paired" to Prefs(ctx).adbPaired,
+        "voiceOn" to Prefs(ctx).voiceOn,
         "autoRecover" to canWriteSecure(ctx),
         "busy" to busy,
         "error" to lastError,
@@ -230,7 +231,7 @@ object AdbSelf {
     fun ensureHelper(ctx: Context, force: Boolean = false): Boolean {
         val app = ctx.applicationContext
         val p = Prefs(app)
-        if (!p.adbPaired || Build.VERSION.SDK_INT < 33) return false
+        if (!p.adbPaired || !p.voiceOn || Build.VERSION.SDK_INT < 33) return false
         busy = true
         Bus.emit("adb", state(app))
         try {

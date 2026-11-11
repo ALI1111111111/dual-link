@@ -71,6 +71,8 @@ class Prefs(ctx: Context) {
         set(v) = p.edit().putString("adbKey", v?.let { Vault.wrap(it) }).apply()
     var adbCert: String? get() = p.getString("adbCert", null); set(v) = p.edit().putString("adbCert", v).apply()
     var adbPaired: Boolean get() = p.getBoolean("adbPaired", false); set(v) = p.edit().putBoolean("adbPaired", v).apply()
+    /** Phone A: user opted in to "Talk from Phone B" (Advanced). Off by default: no Wireless debugging needed. */
+    var voiceOn: Boolean get() = p.getBoolean("voiceOn", adbPaired); set(v) = p.edit().putBoolean("voiceOn", v).apply()
     var host: String? get() = p.getString("host", null); set(v) = p.edit().putString("host", v).apply()
     var port: Int get() = p.getInt("port", DEFAULT_PORT); set(v) = p.edit().putInt("port", v).apply()
     var enabled: Boolean get() = p.getBoolean("enabled", false); set(v) = p.edit().putBoolean("enabled", v).apply()

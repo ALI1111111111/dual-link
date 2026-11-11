@@ -90,4 +90,5 @@ class Native {
   static Future<void> adbAskCode() => _m.invokeMethod('adbAskCode');
   static Future<void> adbPair(String code) => _m.invokeMethod('adbPair', {'code': code});
   static Future<void> adbStartVoice() => _m.invokeMethod('adbStartVoice');
+  static Future<void> setVoiceOn(bool on) => _m.invokeMethod('setVoiceOn', {'on': on});
 }

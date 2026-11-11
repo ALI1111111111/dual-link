@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../native.dart';
 
-/// Phone A: one-time setup so Phone B can hear and talk on calls (no PC, no root).
+/// Phone A: opt-in "talk from Phone B" (Advanced). Off by default so normal users never need
+/// Developer options; when turned on it explains the trade-offs and walks through the one-time setup.
 class VoiceSetupCard extends StatefulWidget {
   const VoiceSetupCard({super.key});
 
@@ -81,16 +82,54 @@ class _VoiceSetupCardState extends State<VoiceSetupCard> with WidgetsBindingObse
     );
   }
 
+  /// Explains exactly what turning voice on involves before anything changes.
+  Future<void> _toggle(bool on) async {
+    if (on) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (d) => AlertDialog(
+          title: const Text('Talk from Phone B?'),
+          content: const SingleChildScrollView(
+            child: Text(
+              'Lets you hear and speak on calls from Phone B.\n\n'
+              'Android only lets its own system tools reach call audio, so Dual Link uses '
+              'Android\'s built-in Wireless debugging on this phone:\n\n'
+              '• One-time setup (about 1 minute): turn on Developer options and Wireless debugging, '
+              'then type a 6-digit pairing code.\n'
+              '• Developer options must stay on. Some banking or payment apps refuse to open '
+              'while it is on.\n'
+              '• Works on this Wi-Fi only. After a restart it turns itself back on.\n'
+              '• Everything stays on your two phones: no root, no PC, no internet.\n\n'
+              'Without this, Phone B still shows calls and can decline, answer on Phone A, '
+              'end calls and dial. You can turn this off any time.'),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Not now')),
+            FilledButton(onPressed: () => Navigator.pop(d, true), child: const Text('Turn on')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    await Native.setVoiceOn(on);
+    _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_a.isEmpty) return const SizedBox.shrink();
+    if (_a.isEmpty || _a['supported'] != true) return const SizedBox.shrink(); // needs Android 13+
     final scheme = Theme.of(context).colorScheme;
-    if (_a['supported'] != true) {
-      return const Card(child: ListTile(
-        leading: Icon(Icons.phone_disabled),
-        title: Text('Voice on Phone B needs Android 13+ on this phone'),
-        subtitle: Text('Call alerts, decline and dial still work.'),
-      ));
+    final voiceOn = _a['voiceOn'] == true;
+    if (!voiceOn) {
+      return Card(
+        child: SwitchListTile(
+          secondary: const Icon(Icons.record_voice_over_outlined),
+          title: const Text('Advanced: talk from Phone B'),
+          subtitle: const Text('Off — answer calls on this phone. Phone B still shows calls, declines, ends and dials.'),
+          value: false,
+          onChanged: _toggle,
+        ),
+      );
     }
     final paired = _a['paired'] == true;
     final helper = (_s['voiceHelper'] as String?) ?? 'not_started';
@@ -108,14 +147,14 @@ class _VoiceSetupCardState extends State<VoiceSetupCard> with WidgetsBindingObse
             Row(children: [
               Icon(ready ? Icons.record_voice_over : Icons.voice_over_off),
               const SizedBox(width: 12),
-              Expanded(child: Text(ready ? 'Voice calls on Phone B: ready' : 'Set up voice calls on Phone B',
+              Expanded(child: Text(ready ? 'Talk from Phone B: ready' : 'Talk from Phone B: finish setup',
                   style: Theme.of(context).textTheme.titleMedium)),
               if (busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+              Switch(value: true, onChanged: _toggle),
             ]),
             if (!ready) ...[
               const SizedBox(height: 4),
-              const Text('One-time setup on this phone. Uses Android\'s own Wireless debugging; '
-                  'nothing leaves your phones, no root, no PC.'),
+              const Text('One-time setup on this phone (about 1 minute).'),
               _step(1, 'Turn on Developer options',
                   'Settings → About phone → tap "Build number" 7 times.',
                   done: _a['devOptions'] == true,

@@ -92,6 +92,7 @@ public final class VoiceHelper {
             switch (m.optString("t")) {
                 case "start": wanted = true; redirect = m.optBoolean("redirect", true); startAudio(); break;
                 case "stop": wanted = false; stopAudio(); status("idle"); break;
+                case "quit": stopAudio(); System.exit(0); break; // user turned voice off in the app
                 case "up": {
                     AudioTrack t = track;
                     if (t != null) {

@@ -95,6 +95,11 @@ class MainActivity : FlutterActivity() {
                         }
                         "adbAskCode" -> { AdbSelf.askForCode(this@MainActivity); result.success(null) }
                         "adbPair" -> { AdbSelf.pair(this@MainActivity, call.argument<String>("code") ?: ""); result.success(null) }
+                        "setVoiceOn" -> {
+                            val on = call.argument<Boolean>("on") == true
+                            GatewayService.instance?.voice?.setEnabled(on) ?: run { prefs.voiceOn = on }
+                            result.success(AdbSelf.state(this@MainActivity))
+                        }
                         "adbStartVoice" -> {
                             Thread { AdbSelf.ensureHelper(this@MainActivity, force = true) }.start()
                             result.success(null)

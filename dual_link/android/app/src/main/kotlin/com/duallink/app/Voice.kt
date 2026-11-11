@@ -61,11 +61,29 @@ class GatewayVoice(private val ctx: Context, private val toClient: (JSONObject) 
 
     fun wake() { runCatching { socket?.close() }; synchronized(wake) { wake.notifyAll() } }
 
+    /** Turns "Talk from Phone B" on or off. Off also stops the helper process. */
+    fun setEnabled(on: Boolean) {
+        Prefs(ctx).voiceOn = on
+        Thread {
+            if (!on) {
+                runCatching { link?.write(JSONObject().put("t", "quit")) }
+                Prefs(ctx).voiceKey = null
+            }
+            wake()
+        }.start()
+    }
+
     private fun loop() {
         var failures = 0
         var nextLaunch = 0L
         var backoff = 30_000L
         while (running) {
+            // Voice is opt-in: while off, do nothing at all (no helper, no Wireless debugging, no battery).
+            if (!Prefs(ctx).voiceOn) {
+                if (helperStatus != "not_started") setStatus("not_started")
+                synchronized(wake) { if (running) wake.wait(600_000) }
+                continue
+            }
             val key = Prefs(ctx).voiceKey
             // Helper unreachable for a while: relaunch it through this phone's own Wireless debugging.
             // Back-off (30 s → 10 min) keeps battery use tiny if it keeps failing (e.g. no Wi-Fi).
