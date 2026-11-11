@@ -17,6 +17,11 @@ void openThread(String address, String? body) {
 void openRequest(Map<String, String?> r) {
   final address = r['address'];
   switch (r['action']) {
+    case 'answerHere':
+      navKey.currentState?.popUntil((route) => route.isFirst);
+      clientTab.value = 1;
+      final ctx = navKey.currentContext;
+      if (ctx != null) answerHere(ctx);
     case 'calls':
       navKey.currentState?.popUntil((route) => route.isFirst);
       clientTab.value = 1;

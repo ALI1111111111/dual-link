@@ -90,6 +90,7 @@ class CallBanner extends StatefulWidget {
 
 class _CallBannerState extends State<CallBanner> {
   Map<String, dynamic>? _call;
+  Map<String, dynamic> _voice = {};
   List _sims = [];
   StreamSubscription? _sub;
   Timer? _tick;
@@ -99,7 +100,7 @@ class _CallBannerState extends State<CallBanner> {
     super.initState();
     _refresh();
     _sub = Native.events.listen((e) {
-      if (e['type'] == 'call' || e['type'] == 'client') _refresh();
+      if (e['type'] == 'call' || e['type'] == 'client' || e['type'] == 'voice') _refresh();
       if (e['type'] == 'callcmd' && e['ok'] != true && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Phone A could not ${e['cmd']}: ${e['reason']}')));
       }
@@ -116,7 +117,13 @@ class _CallBannerState extends State<CallBanner> {
 
   Future<void> _refresh() async {
     final s = await Native.state();
-    if (mounted) setState(() { _call = s['call'] == null ? null : Map<String, dynamic>.from(s['call'] as Map); _sims = (s['sims'] as List?) ?? []; });
+    if (mounted) {
+      setState(() {
+        _call = s['call'] == null ? null : Map<String, dynamic>.from(s['call'] as Map);
+        _voice = Map<String, dynamic>.from((s['voice'] as Map?) ?? {});
+        _sims = (s['sims'] as List?) ?? [];
+      });
+    }
   }
 
   Future<void> _cmd(String c) async {
@@ -133,6 +140,8 @@ class _CallBannerState extends State<CallBanner> {
     final who = ContactBook.name(number) ?? (number.isEmpty ? 'Unknown number' : number);
     final ringing = c['state'] == 'ringing';
     final scheme = Theme.of(context).colorScheme;
+    final voiceReady = _voice['helper'] != null && _voice['helper'] != 'not_started';
+    final talking = _voice['active'] == true;
     final secs = ((DateTime.now().millisecondsSinceEpoch - (c['since'] as int)) / 1000).floor();
     final dur = '${(secs ~/ 60).toString().padLeft(2, '0')}:${(secs % 60).toString().padLeft(2, '0')}';
 
@@ -151,7 +160,10 @@ class _CallBannerState extends State<CallBanner> {
                   Text(who, style: Theme.of(context).textTheme.titleMedium),
                   Text(ringing
                       ? 'Incoming call · ${_simShort(_sims, c['sim'] as int)}'
-                      : 'On call on Phone A · $dur'),
+                      : talking ? 'On call · talking on this phone · $dur' : 'On call on Phone A · $dur'),
+                  if (!voiceReady)
+                    Text('Voice helper not running on Phone A — talk on Phone A',
+                        style: Theme.of(context).textTheme.bodySmall),
                 ]),
               ),
             ]),
@@ -161,11 +173,28 @@ class _CallBannerState extends State<CallBanner> {
                 FilledButton.icon(
                   style: FilledButton.styleFrom(backgroundColor: scheme.error, foregroundColor: scheme.onError),
                   onPressed: () => _cmd('decline'), icon: const Icon(Icons.call_end), label: const Text('Decline')),
-                OutlinedButton.icon(onPressed: () => _cmd('answer'), icon: const Icon(Icons.call), label: const Text('Answer on Phone A')),
-              ] else
+                if (voiceReady)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+                    onPressed: () => answerHere(context), icon: const Icon(Icons.call), label: const Text('Answer here')),
+                OutlinedButton.icon(onPressed: () => _cmd('answer'), icon: const Icon(Icons.phone_android), label: const Text('Answer on Phone A')),
+              ] else ...[
                 FilledButton.icon(
                   style: FilledButton.styleFrom(backgroundColor: scheme.error, foregroundColor: scheme.onError),
                   onPressed: () => _cmd('end'), icon: const Icon(Icons.call_end), label: const Text('End call')),
+                if (talking) ...[
+                  IconButton.filledTonal(
+                    tooltip: 'Speaker', isSelected: _voice['speaker'] == true,
+                    onPressed: () async { await Native.voiceSpeaker(_voice['speaker'] != true); _refresh(); },
+                    icon: const Icon(Icons.volume_up)),
+                  IconButton.filledTonal(
+                    tooltip: 'Mute', isSelected: _voice['muted'] == true,
+                    onPressed: () async { await Native.voiceMute(_voice['muted'] != true); _refresh(); },
+                    icon: Icon(_voice['muted'] == true ? Icons.mic_off : Icons.mic)),
+                ] else if (voiceReady)
+                  FilledButton.icon(onPressed: () async { await talkHere(context); _refresh(); },
+                      icon: const Icon(Icons.record_voice_over), label: const Text('Talk here')),
+              ],
               if (number.isNotEmpty)
                 OutlinedButton.icon(
                   onPressed: () {
@@ -182,7 +211,32 @@ class _CallBannerState extends State<CallBanner> {
   }
 }
 
-/// Asks which SIM, then makes Phone A dial. The call's voice is on Phone A.
+/// Starts two-way audio on this phone for Phone A's current call.
+Future<bool> talkHere(BuildContext context) async {
+  if (!await Native.requestPermissions(['mic'])) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Microphone permission is needed to talk')));
+    }
+    return false;
+  }
+  final ok = await Native.voiceStart();
+  if (!ok && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not start audio')));
+  }
+  return ok;
+}
+
+/// Answers the ringing call on Phone A and talks on this phone.
+Future<void> answerHere(BuildContext context) async {
+  if (!await Native.requestPermissions(['mic'])) return;
+  if (!await Native.callCmd('answer')) {
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone A is not connected')));
+    return;
+  }
+  if (context.mounted) await talkHere(context);
+}
+
+/// Asks which SIM, then makes Phone A dial; audio comes to this phone when the voice helper runs.
 Future<void> dialViaPhoneA(BuildContext context, String number) async {
   final s = await Native.state();
   final sims = (s['sims'] as List?) ?? [];
@@ -211,7 +265,11 @@ Future<void> dialViaPhoneA(BuildContext context, String number) async {
   final ok = await Native.callCmd('dial', number: number, sim: sim);
   if (!ok && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Phone A is not connected')));
+    return;
   }
+  // Talk on this phone if Phone A's voice helper is running.
+  final v = (s['voice'] as Map?) ?? {};
+  if (v['helper'] != 'not_started' && context.mounted) await talkHere(context);
 }
 
 /// Phone A's call history with names, SIM and quick call / message.

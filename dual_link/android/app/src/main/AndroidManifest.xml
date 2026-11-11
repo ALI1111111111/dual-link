@@ -12,6 +12,14 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- Granted once through the phone's own Wireless debugging; lets Dual Link turn
+         Wireless debugging back on after a reboot so voice recovers without the user -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        xmlns:tools="http://schemas.android.com/tools" tools:ignore="ProtectedPermissions" />
+    <!-- Phone B: talk on calls that run on Phone A's SIM -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Phone B: incoming-call alert shows full screen like a real call -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- Default SMS app role expects these to be requested -->
@@ -117,6 +125,14 @@
         <!-- Notification buttons (Reply / Mark as read / Copy code); only this app can trigger it -->
         <receiver android:name=".NotificationActionReceiver" android:exported="false" />
         <receiver android:name=".CallActionReceiver" android:exported="false" />
+        <!-- Voice helper key, sent by the ADB launcher. DUMP is held only by the ADB shell and the
+             system, so no other app can send this. -->
+        <receiver
+            android:name=".VoiceKeyReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+        <!-- Pairing code typed into Dual Link's own notification -->
+        <receiver android:name=".AdbPairReceiver" android:exported="false" />
 
         <service
             android:name=".GatewayService"
@@ -128,7 +144,7 @@
         <service
             android:name=".ClientService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|microphone">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Receives the user's SMS from their own other phone over local Wi-Fi" />
         </service>

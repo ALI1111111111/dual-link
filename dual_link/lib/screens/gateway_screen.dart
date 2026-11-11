@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../native.dart';
+import 'voice_setup.dart';
 
 /// Asks for SMS + notification permission, then turns this phone into the gateway.
 class GatewaySetupScreen extends StatefulWidget {
@@ -175,6 +176,8 @@ class _GatewayScreenState extends State<GatewayScreen> with WidgetsBindingObserv
                   onTap: Native.requestIgnoreBattery,
                 ),
               ),
+            const SizedBox(height: 8),
+            const VoiceSetupCard(),
             const SizedBox(height: 16),
             if (qr != null) ...[
               Text('Pair Phone B', style: Theme.of(context).textTheme.titleMedium),

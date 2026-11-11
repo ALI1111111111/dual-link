@@ -2,6 +2,13 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Only libadb-android and its SPAKE2 dependency come from JitPack; nothing else may.
+        maven("https://jitpack.io") {
+            content {
+                includeGroup("com.github.MuntashirAkon")
+                includeGroup("com.github.MuntashirAkon.spake2-java")
+            }
+        }
     }
 }
 

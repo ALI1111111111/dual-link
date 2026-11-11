@@ -85,6 +85,21 @@ class MainActivity : FlutterActivity() {
                             result.success(state(prefs))
                         }
 
+                        // ---- Phone A voice setup (Wireless debugging, no PC) ----
+                        "adbState" -> result.success(AdbSelf.state(this@MainActivity))
+                        "adbOpenDevSettings" -> {
+                            val target = if (AdbSelf.devOptionsOn(this@MainActivity))
+                                Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS else Settings.ACTION_DEVICE_INFO_SETTINGS
+                            runCatching { startActivity(Intent(target)) }
+                            result.success(null)
+                        }
+                        "adbAskCode" -> { AdbSelf.askForCode(this@MainActivity); result.success(null) }
+                        "adbPair" -> { AdbSelf.pair(this@MainActivity, call.argument<String>("code") ?: ""); result.success(null) }
+                        "adbStartVoice" -> {
+                            Thread { AdbSelf.ensureHelper(this@MainActivity, force = true) }.start()
+                            result.success(null)
+                        }
+
                         "resume" -> {
                             prefs.enabled = true
                             if (prefs.mode == "gateway") GatewayService.start(this@MainActivity)
@@ -127,6 +142,14 @@ class MainActivity : FlutterActivity() {
                         }
 
                         "calls" -> result.success(store.calls())
+
+                        "voiceStart" -> {
+                            ClientService.instance?.promoteForMic()
+                            result.success(ClientVoice.start(this@MainActivity))
+                        }
+                        "voiceStop" -> { ClientVoice.stop(this@MainActivity); result.success(null) }
+                        "voiceSpeaker" -> { ClientVoice.setSpeaker(this@MainActivity, call.argument<Boolean>("on") == true); result.success(null) }
+                        "voiceMute" -> { ClientVoice.muted = call.argument<Boolean>("on") == true; result.success(null) }
 
                         "callCmd" -> {
                             val j = JSONObject().put("cmd", call.argument<String>("cmd"))
@@ -207,6 +230,7 @@ class MainActivity : FlutterActivity() {
             "host" to p.host,
             "qr" to qr,
             "gatewayRunning" to (GatewayService.instance != null),
+            "voiceHelper" to (GatewayService.instance?.voice?.helperStatus ?: "not_started"),
             "clientRunning" to (ClientService.instance != null),
             "clientConnectedToGateway" to GatewayService.clientConnected,
             "pending" to Store.get(this).pendingCount(),
@@ -214,6 +238,7 @@ class MainActivity : FlutterActivity() {
             "battery" to ClientService.gatewayBattery,
             "sims" to ClientService.gatewaySims,
             "call" to ClientCalls.current,
+            "voice" to ClientVoice.state(),
         )
     }
 
@@ -244,6 +269,7 @@ class MainActivity : FlutterActivity() {
             Manifest.permission.ANSWER_PHONE_CALLS, Manifest.permission.CALL_PHONE)
         "notifications" -> if (Build.VERSION.SDK_INT >= 33) listOf(Manifest.permission.POST_NOTIFICATIONS) else emptyList()
         "camera" -> listOf(Manifest.permission.CAMERA)
+        "mic" -> listOf(Manifest.permission.RECORD_AUDIO)
         else -> emptyList()
     }
 
@@ -259,6 +285,7 @@ class MainActivity : FlutterActivity() {
 
     /** sms:/smsto: from Contacts, links or other apps -> {address, body}. */
     private fun composeFrom(i: Intent?): Map<String, String?>? {
+        if (i?.getBooleanExtra("answerHere", false) == true) return mapOf("action" to "answerHere", "address" to i.getStringExtra("address"))
         if (i?.getBooleanExtra("callScreen", false) == true) return mapOf("action" to "calls", "address" to i.getStringExtra("address"))
         val data = i?.data ?: return null
         if (data.scheme == "tel") {

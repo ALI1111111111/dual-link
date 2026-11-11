@@ -61,6 +61,16 @@ class Prefs(ctx: Context) {
     var key: String?
         get() = p.getString("key", null)?.let { Vault.unwrap(it) }
         set(v) = p.edit().putString("key", v?.let { Vault.wrap(it) }).apply()
+    /** Phone A: key shared with the voice helper (set by the ADB launcher). */
+    var voiceKey: String?
+        get() = p.getString("voiceKey", null)?.let { Vault.unwrap(it) }
+        set(v) = p.edit().putString("voiceKey", v?.let { Vault.wrap(it) }).apply()
+    /** Phone A: identity used to talk to its own Wireless debugging (private key encrypted). */
+    var adbKey: String?
+        get() = p.getString("adbKey", null)?.let { Vault.unwrap(it) }
+        set(v) = p.edit().putString("adbKey", v?.let { Vault.wrap(it) }).apply()
+    var adbCert: String? get() = p.getString("adbCert", null); set(v) = p.edit().putString("adbCert", v).apply()
+    var adbPaired: Boolean get() = p.getBoolean("adbPaired", false); set(v) = p.edit().putBoolean("adbPaired", v).apply()
     var host: String? get() = p.getString("host", null); set(v) = p.edit().putString("host", v).apply()
     var port: Int get() = p.getInt("port", DEFAULT_PORT); set(v) = p.edit().putInt("port", v).apply()
     var enabled: Boolean get() = p.getBoolean("enabled", false); set(v) = p.edit().putBoolean("enabled", v).apply()

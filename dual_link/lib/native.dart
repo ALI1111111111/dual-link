@@ -44,6 +44,12 @@ class Native {
       (await _m.invokeMethod('requestPermissions', {'names': names})) as bool;
   static Future<void> openAppSettings() => _m.invokeMethod('openAppSettings');
 
+  /// Talk on Phone A's call from this phone.
+  static Future<bool> voiceStart() async => (await _m.invokeMethod('voiceStart')) as bool;
+  static Future<void> voiceStop() => _m.invokeMethod('voiceStop');
+  static Future<void> voiceSpeaker(bool on) => _m.invokeMethod('voiceSpeaker', {'on': on});
+  static Future<void> voiceMute(bool on) => _m.invokeMethod('voiceMute', {'on': on});
+
   static Future<bool> canFullScreen() async => (await _m.invokeMethod('canFullScreen')) as bool;
   static Future<void> openFullScreenSettings() => _m.invokeMethod('openFullScreenSettings');
 
@@ -77,4 +83,11 @@ class Native {
   /// decline / answer / end / dial on Phone A. False if Phone A isn't connected.
   static Future<bool> callCmd(String cmd, {String? number, int? sim}) async =>
       (await _m.invokeMethod('callCmd', {'cmd': cmd, 'number': number, 'sim': sim})) as bool;
+
+  // ---- Phone A: voice setup through its own Wireless debugging (no PC) ----
+  static Future<Map<String, dynamic>> adbState() => _map('adbState');
+  static Future<void> adbOpenDevSettings() => _m.invokeMethod('adbOpenDevSettings');
+  static Future<void> adbAskCode() => _m.invokeMethod('adbAskCode');
+  static Future<void> adbPair(String code) => _m.invokeMethod('adbPair', {'code': code});
+  static Future<void> adbStartVoice() => _m.invokeMethod('adbStartVoice');
 }

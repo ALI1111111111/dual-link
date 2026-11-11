@@ -92,6 +92,17 @@ class ClientService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
 
+    /**
+     * Android 14+: the mic may only be used in the background by a foreground service of type
+     * "microphone", promoted while the app is on screen (the user just tapped Answer / Talk).
+     */
+    fun promoteForMic() {
+        val type = if (Build.VERSION.SDK_INT >= 34)
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
+        runCatching { ServiceCompat.startForeground(this, 2, notification("On a call through Phone A"), type) }
+            .onFailure { Log.w(TAG, "mic promotion failed: ${it.message}") }
+    }
+
     override fun onDestroy() {
         running = false
         instance = null
@@ -206,6 +217,12 @@ class ClientService : Service() {
                 }
             }
             "call" -> ClientCalls.handle(this, m)
+            "va" -> ClientVoice.onAudio(m.getString("d"))
+            "voice_status" -> {
+                ClientVoice.helperStatus = m.getString("s")
+                Log.i(TAG, "UAT voice_status ${m.getString("s")}")
+                Bus.emit("voice", ClientVoice.state())
+            }
             "calls" -> {
                 val a = m.getJSONArray("items")
                 val store = Store.get(this)
@@ -267,6 +284,7 @@ class ClientService : Service() {
         if (connected == c) return
         connected = c
         Log.i(TAG, if (c) "UAT connected" else "UAT disconnected")
+        if (!c) ClientVoice.stop(this)
         if (!c && ClientCalls.current != null) { // lost Phone A mid-call: stop ringing, we can't know the outcome
             ClientCalls.current = null
             androidx.core.app.NotificationManagerCompat.from(this).cancel(ClientCalls.NOTIF_CALL)

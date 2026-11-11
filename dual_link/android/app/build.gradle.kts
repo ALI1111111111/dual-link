@@ -51,6 +51,10 @@ flutter {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    // Phone A talks to its own Wireless debugging (localhost only) to start the voice helper.
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+    implementation("org.conscrypt:conscrypt-android:2.5.3") // TLS 1.3 for ADB pairing
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.81") // same version libadb uses; builds our cert
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

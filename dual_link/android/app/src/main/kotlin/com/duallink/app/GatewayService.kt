@@ -70,6 +70,8 @@ class GatewayService : Service() {
     private val simQueue = Executors.newSingleThreadExecutor() // SMS go out in the order they were written
     private val limiter = RateLimiter(SendPolicy.MAX_PER_MINUTE)
     private var calls: GatewayCalls? = null
+    var voice: GatewayVoice? = null
+        private set
     // send id -> [parts remaining, failed?, first error code]
     private val sending = HashMap<String, IntArray>()
 
@@ -123,7 +125,11 @@ class GatewayService : Service() {
         ServiceCompat.startForeground(this, 1, notification("Waiting for Phone B…"), type)
         instance = this
         ContextCompat.registerReceiver(this, sentReceiver, IntentFilter(ACTION_SENT), ContextCompat.RECEIVER_NOT_EXPORTED)
-        calls = GatewayCalls(this) { push(it) }.also { it.start() }
+        voice = GatewayVoice(this) { push(it) }.also { it.start() }
+        calls = GatewayCalls(this) {
+            if (it.optString("state") == "ended") voice?.callEnded()
+            push(it)
+        }.also { it.start() }
         Thread(::acceptLoop, "gw-accept").start()
     }
 
@@ -137,6 +143,7 @@ class GatewayService : Service() {
         runCatching { socket?.close() }
         runCatching { unregisterReceiver(sentReceiver) }
         calls?.stop()
+        voice?.stop()
         writer.shutdownNow()
         simQueue.shutdown() // let already-accepted SMS finish
         Bus.emit("gateway", mapOf("running" to false, "connected" to false))
@@ -183,6 +190,7 @@ class GatewayService : Service() {
             Log.i(TAG, "UAT client_connected")
             update("Connected to Phone B")
             push(info())
+            push(JSONObject().put("t", "voice_status").put("s", voice?.helperStatus ?: "not_started"))
             Store.get(this).allPending().forEach { push(it) }
             while (true) {
                 val m = l.read() ?: break
@@ -202,6 +210,7 @@ class GatewayService : Service() {
                     "history" -> { val since = m.optLong("since"); Thread({ sendHistory(since) }, "gw-history").start() }
                     "calllog" -> calls?.sendLog(m.optLong("since"))
                     "callcmd" -> calls?.command(m)
+                    "voice", "va" -> voice?.fromClient(m)
                 }
             }
         } catch (e: Exception) {

@@ -195,6 +195,7 @@ object ClientCalls {
             "active" -> { current = mapOf("state" to st, "number" to number, "sim" to sim, "since" to m.optLong("ts"), "outgoing" to m.optBoolean("outgoing")); ongoing(ctx, number) }
             "ended" -> {
                 current = null
+                ClientVoice.stop(ctx)
                 NotificationManagerCompat.from(ctx).cancel(NOTIF_CALL)
                 if (m.optBoolean("missed")) missed(ctx, number)
             }
@@ -226,7 +227,11 @@ object ClientCalls {
             .setFullScreenIntent(openApp(ctx, number), true)
             .setContentIntent(openApp(ctx, number))
             .addAction(R.drawable.ic_stat_link, "Decline", pi(ctx, ACTION_DECLINE, number))
-            .addAction(R.drawable.ic_stat_link, "Answer on Phone A", pi(ctx, ACTION_ANSWER, number))
+            // Opens the app (needed for the mic), which answers and starts audio on this phone.
+            .addAction(R.drawable.ic_stat_link, "Answer here", PendingIntent.getActivity(ctx, 8,
+                Intent(ctx, MainActivity::class.java).putExtra("answerHere", true).putExtra("address", number)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
             .build().apply { flags = flags or android.app.Notification.FLAG_INSISTENT } // keep ringing
         runCatching { NotificationManagerCompat.from(ctx).notify(NOTIF_CALL, n) }
     }
