@@ -5,14 +5,14 @@
 <h1 align="center">Dual Link</h1>
 
 <p align="center">
-  <b>Texts and calls from your SIM phone, on your other phone.</b><br>
+  <b>Never miss texts, OTP codes or calls from your SIM phone again.</b><br>
   Over your own Wi-Fi · end-to-end encrypted · no servers · no accounts
 </p>
 
 <p align="center">
   <a href="https://groups.google.com/g/dual-link-testers"><b>Join the testing group</b></a> ·
   <a href="https://ali1111111111.github.io/dual-link-site/">Website</a> ·
-  <a href="https://youtu.be/5dDzYh4ltAI">Promo video</a> ·
+  <a href="https://youtu.be/0-UP4yRT_ms">Video</a> ·
   <a href="https://youtu.be/RPbOyae_HIw">Walkthrough</a> ·
   <a href="https://ali1111111111.github.io/dual-link-site/privacy.html">Privacy</a>
 </p>
@@ -30,6 +30,17 @@ Dual Link is in **closed testing on Google Play**. To go public, Google needs at
 Feedback and bug reports: open an issue here or email thetechfinn@gmail.com. Thank you!
 
 ---
+
+## The problem
+
+Your SIM is in one phone, but you're holding another. The texts, bank OTP codes and calls still go to the phone in the other room, in the drawer or on the charger, and you miss them.
+
+- Missed **OTP and bank verification codes** because the SIM phone wasn't nearby
+- Missed **calls** while the SIM phone charges in another room
+- **Two phones** (work and personal, old and new) to check all day
+- A SIM sits in **one phone at a time**, so your number is stuck there
+- **Call forwarding moves calls, not texts**, and carriers **can't forward OTPs**
+- A **spare phone, tablet or SIM-less phone** that can't receive your SMS
 
 ## What it does
 
@@ -55,7 +66,7 @@ Carry one phone, keep both numbers in reach. Leave the phone with your SIM (**Ph
 - **Never lost, never duplicated:** messages are queued and acknowledged, even across Wi-Fi drops; reconnects by itself.
 - **Light on battery:** an idle link uses under 1% CPU.
 
-**Videos:** [30-second promo](https://youtu.be/5dDzYh4ltAI) · [setup and usage walkthrough](https://youtu.be/RPbOyae_HIw) (files in [`dual_link/play/assets/video`](dual_link/play/assets/video)).
+**Videos:** [the problem and the fix (40 s)](https://youtu.be/0-UP4yRT_ms) · [30-second promo](https://youtu.be/5dDzYh4ltAI) · [setup and usage walkthrough](https://youtu.be/RPbOyae_HIw) (files in [`dual_link/play/assets/video`](dual_link/play/assets/video)).
 
 ## Privacy and security
 
