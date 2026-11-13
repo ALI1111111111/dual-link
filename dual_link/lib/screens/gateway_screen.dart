@@ -123,6 +123,7 @@ class _GatewayScreenState extends State<GatewayScreen> with WidgetsBindingObserv
         actions: [
           PopupMenuButton<String>(
             onSelected: (v) async {
+              if (v == 'privacy') await Native.openPrivacy();
               if (v == 'rotate') {
                 final ok = await showDialog<bool>(
                   context: context,
@@ -149,6 +150,7 @@ class _GatewayScreenState extends State<GatewayScreen> with WidgetsBindingObserv
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'rotate', child: Text('New pairing code')),
               PopupMenuItem(value: 'reset', child: Text('Unpair & change mode')),
+              PopupMenuItem(value: 'privacy', child: Text('Privacy policy')),
             ],
           ),
         ],

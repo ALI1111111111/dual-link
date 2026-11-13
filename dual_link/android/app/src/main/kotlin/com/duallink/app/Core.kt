@@ -24,6 +24,7 @@ const val DEFAULT_PORT = 47820
 const val NSD_TYPE = "_duallink._tcp."
 const val CH_SERVICE = "service"
 const val CH_SMS = "sms"
+const val PRIVACY_URL = "https://ali1111111111.github.io/dual-link-site/privacy.html"
 
 /** Wraps the pairing key with a key that never leaves the phone's secure hardware (Android Keystore). */
 private object Vault {

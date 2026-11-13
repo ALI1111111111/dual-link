@@ -128,6 +128,7 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
         actions: [
           PopupMenuButton<String>(
             onSelected: (v) async {
+              if (v == 'privacy') await Native.openPrivacy();
               if (v == 'stop') await Native.stop();
               if (v == 'resume') await Native.resume();
               if (v == 'reset') {
@@ -142,6 +143,7 @@ class _InboxScreenState extends State<InboxScreen> with WidgetsBindingObserver {
                   ? const PopupMenuItem(value: 'stop', child: Text('Disconnect'))
                   : const PopupMenuItem(value: 'resume', child: Text('Connect')),
               const PopupMenuItem(value: 'reset', child: Text('Unpair & change mode')),
+              const PopupMenuItem(value: 'privacy', child: Text('Privacy policy')),
             ],
           ),
         ],

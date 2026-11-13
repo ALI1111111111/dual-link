@@ -206,6 +206,10 @@ class MainActivity : FlutterActivity() {
                             }
                         }
 
+                        "openPrivacy" -> {
+                            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL))) }
+                            result.success(null)
+                        }
                         "openAppSettings" -> {
                             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
                             result.success(null)

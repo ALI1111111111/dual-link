@@ -46,6 +46,7 @@ class Native {
   static Future<bool> requestPermissions(List<String> names) async =>
       (await _m.invokeMethod('requestPermissions', {'names': names})) as bool;
   static Future<void> openAppSettings() => _m.invokeMethod('openAppSettings');
+  static Future<void> openPrivacy() => _m.invokeMethod('openPrivacy');
 
   /// Talk on Phone A's call from this phone.
   static Future<bool> voiceStart() async => (await _m.invokeMethod('voiceStart')) as bool;
