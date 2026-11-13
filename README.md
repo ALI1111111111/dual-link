@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://groups.google.com/g/dual-link-testers"><b>Join the testing group</b></a> ·
+  <a href="https://ali1111111111.github.io/dual-link-site/join.html"><b>Join the test (3 taps)</b></a> ·
   <a href="https://ali1111111111.github.io/dual-link-site/">Website</a> ·
   <a href="https://youtu.be/0-UP4yRT_ms">Video</a> ·
   <a href="https://youtu.be/RPbOyae_HIw">Walkthrough</a> ·
@@ -23,8 +23,10 @@
 
 Dual Link is in **closed testing on Google Play**. To go public, Google needs at least **12 testers who keep the app installed for 14 days**. You can make that happen in two minutes:
 
-1. **Join the group:** <https://groups.google.com/g/dual-link-testers> (one click, with your Google account)
-2. **Become a tester:** <https://play.google.com/apps/testing/com.duallink.app>
+Everything is on one page: **<https://ali1111111111.github.io/dual-link-site/join.html>**
+
+1. **Join the group** (one click, with your Google account)
+2. **Become a tester** on Google Play
 3. **Install** Dual Link from Google Play and keep it for 14 days. One phone is enough to look around; two phones show the full magic.
 
 Feedback and bug reports: open an issue here or email thetechfinn@gmail.com. Thank you!

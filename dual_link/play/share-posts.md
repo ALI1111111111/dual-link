@@ -1,6 +1,7 @@
 # Ready-to-share posts
 
 Links used below:
+- **Join page (use this one):** https://ali1111111111.github.io/dual-link-site/join.html
 - Join testers (group): https://groups.google.com/g/dual-link-testers
 - Become a tester (Play): https://play.google.com/apps/testing/com.duallink.app
 - Website: https://ali1111111111.github.io/dual-link-site/
