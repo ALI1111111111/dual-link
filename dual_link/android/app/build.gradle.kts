@@ -1,8 +1,19 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Play upload key: key.properties (git-ignored) points at a keystore kept outside the repo.
+// `-Psideload` keeps the old debug signature so already-installed test phones can update in place.
+val keyProps = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) FileInputStream(f).use { load(it) }
+}
+val useUploadKey = !keyProps.isEmpty && !project.hasProperty("sideload")
 
 android {
     namespace = "com.duallink.app"
@@ -15,10 +26,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.duallink.app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26 // Android 8+: needed for java.util.Base64 and modern background rules
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
@@ -29,11 +37,18 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (useUploadKey) create("upload") {
+            storeFile = file(keyProps.getProperty("storeFile"))
+            storePassword = keyProps.getProperty("storePassword")
+            keyAlias = keyProps.getProperty("keyAlias")
+            keyPassword = keyProps.getProperty("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (useUploadKey) "upload" else "debug")
         }
     }
 }

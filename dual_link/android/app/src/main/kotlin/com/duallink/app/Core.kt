@@ -91,6 +91,12 @@ class Store private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "duallink.
     companion object {
         @Volatile private var inst: Store? = null
         fun get(ctx: Context) = inst ?: synchronized(this) { inst ?: Store(ctx.applicationContext).also { inst = it } }
+
+        /** Unpair: removes every stored message, queue and call-log copy. */
+        fun wipe(ctx: Context) = synchronized(this) {
+            inst?.close(); inst = null
+            ctx.applicationContext.deleteDatabase("duallink.db")
+        }
     }
 
     override fun onCreate(db: SQLiteDatabase) {

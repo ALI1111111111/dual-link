@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../disclosure.dart';
 import '../native.dart';
 import 'voice_setup.dart';
 
@@ -19,6 +20,7 @@ class _GatewaySetupScreenState extends State<GatewaySetupScreen> {
   String? _error;
 
   Future<void> _start() async {
+    if (!await showDataDisclosure(context, phoneA: true)) return;
     await Native.requestPermissions(['notifications']);
     final sms = await Native.requestPermissions(['sms']);
     await Native.requestPermissions(['calls']); // optional: call alerts on Phone B

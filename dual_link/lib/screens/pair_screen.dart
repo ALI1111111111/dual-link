@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../disclosure.dart';
 import '../native.dart';
 
 /// Phone B: scan Phone A's QR code (or paste the code) to pair.
@@ -34,6 +35,10 @@ class _PairScreenState extends State<PairScreen> {
       return;
     }
     setState(() => _busy = true);
+    if (!await showDataDisclosure(context, phoneA: false)) {
+      setState(() => _busy = false);
+      return;
+    }
     await Native.requestPermissions(['notifications']);
     await Native.pairClient(code);
     if (!await Native.isIgnoringBattery()) await Native.requestIgnoreBattery();

@@ -88,12 +88,18 @@ class MainActivity : FlutterActivity() {
                         // ---- Phone A voice setup (Wireless debugging, no PC) ----
                         "adbState" -> result.success(AdbSelf.state(this@MainActivity))
                         "adbOpenDevSettings" -> {
-                            val target = if (AdbSelf.devOptionsOn(this@MainActivity))
-                                Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS else Settings.ACTION_DEVICE_INFO_SETTINGS
-                            runCatching { startActivity(Intent(target)) }
+                            // Opens Settings scrolled to (and highlighting) the exact row the user needs.
+                            val dev = AdbSelf.devOptionsOn(this@MainActivity)
+                            val row = if (dev) "toggle_adb_wireless" else "build_number"
+                            val target = if (dev) Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS else Settings.ACTION_DEVICE_INFO_SETTINGS
+                            runCatching {
+                                startActivity(Intent(target)
+                                    .putExtra(":settings:fragment_args_key", row)
+                                    .putExtra(":settings:show_fragment_args", android.os.Bundle().apply { putString(":settings:fragment_args_key", row) }))
+                            }
                             result.success(null)
                         }
-                        "adbAskCode" -> { AdbSelf.askForCode(this@MainActivity); result.success(null) }
+                        "adbAskCode" -> { AdbSelf.startPairing(this@MainActivity); result.success(null) }
                         "adbPair" -> { AdbSelf.pair(this@MainActivity, call.argument<String>("code") ?: ""); result.success(null) }
                         "setVoiceOn" -> {
                             val on = call.argument<Boolean>("on") == true
@@ -116,6 +122,7 @@ class MainActivity : FlutterActivity() {
                             GatewayService.stop(this@MainActivity)
                             ClientService.stop(this@MainActivity)
                             prefs.clear()
+                            Store.wipe(this@MainActivity)
                             result.success(state(prefs))
                         }
 

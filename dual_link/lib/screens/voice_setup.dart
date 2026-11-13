@@ -67,6 +67,21 @@ class _VoiceSetupCardState extends State<VoiceSetupCard> with WidgetsBindingObse
     _refresh();
   }
 
+  /// Live instructions for the pairing step, following what Android is showing right now.
+  String _pairHint() {
+    if (_a['busy'] == true) return 'Pairing…';
+    if (_a['codeScreen'] == true) {
+      return 'Code is on screen. Pull down the notification "Type the 6-digit code here" and type it.';
+    }
+    if (_a['watching'] == true) {
+      return _a['wirelessDebugging'] == true
+          ? 'Tap the words "Wireless debugging", then "Pair device with pairing code".'
+          : 'Switch on "Wireless debugging" (allow it), then tap the words "Wireless debugging" '
+              'and "Pair device with pairing code".';
+    }
+    return 'Tap Start. Settings opens; Dual Link tells you each tap and asks for the code itself.';
+  }
+
   Widget _step(int n, String title, String text, {required bool done, Widget? action}) {
     final scheme = Theme.of(context).colorScheme;
     return ListTile(
@@ -156,21 +171,18 @@ class _VoiceSetupCardState extends State<VoiceSetupCard> with WidgetsBindingObse
               const SizedBox(height: 4),
               const Text('One-time setup on this phone (about 1 minute).'),
               _step(1, 'Turn on Developer options',
-                  'Settings → About phone → tap "Build number" 7 times.',
+                  'Tap Open, then tap "Build number" 7 times (enter your PIN if asked). Then come back here.',
                   done: _a['devOptions'] == true,
                   action: TextButton(onPressed: Native.adbOpenDevSettings, child: const Text('Open'))),
-              _step(2, 'Turn on Wireless debugging',
-                  'Developer options → Wireless debugging → On (needs Wi-Fi).',
-                  done: _a['wirelessDebugging'] == true || paired,
-                  action: TextButton(onPressed: Native.adbOpenDevSettings, child: const Text('Open'))),
-              _step(3, 'Pair Dual Link',
-                  'Tap "Pair device with pairing code", keep the code on screen, '
-                      'then type it into Dual Link\'s notification.',
+              _step(2, 'Pair (Dual Link guides you)',
+                  _pairHint(),
                   done: paired,
-                  action: TextButton(
-                    onPressed: () async { await Native.adbAskCode(); await Native.adbOpenDevSettings(); },
-                    child: const Text('Start'))),
-              if (!paired)
+                  action: _a['devOptions'] == true
+                      ? TextButton(
+                          onPressed: () async { await Native.adbAskCode(); await Native.adbOpenDevSettings(); },
+                          child: Text(_a['watching'] == true ? 'Open again' : 'Start'))
+                      : null),
+              if (!paired && _a['codeScreen'] == true)
                 Align(alignment: Alignment.centerRight,
                     child: TextButton(onPressed: _enterCode, child: const Text('Type code here instead'))),
               if (paired)

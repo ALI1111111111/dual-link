@@ -120,11 +120,65 @@ object AdbSelf {
         "voiceOn" to Prefs(ctx).voiceOn,
         "autoRecover" to canWriteSecure(ctx),
         "busy" to busy,
+        "watching" to watching,
+        "codeScreen" to codeScreen,
         "error" to lastError,
         "supported" to (Build.VERSION.SDK_INT >= 33), // call-audio interception API
     )
 
     // ---------------------------------------------------------------- pairing
+
+    @Volatile private var watching = false
+    @Volatile private var codeScreen = false
+
+    /**
+     * Guided pairing: watches for Android's pairing-code screen (up to 5 min) and pops the
+     * "type the code" notification the moment it opens, so the user never has to hunt for it.
+     */
+    fun startPairing(ctx: Context) {
+        val app = ctx.applicationContext
+        if (watching) return
+        watching = true; codeScreen = false; lastError = null
+        guide(app)
+        Thread {
+            val until = System.currentTimeMillis() + 300_000
+            try {
+                while (watching && !Prefs(app).adbPaired && System.currentTimeMillis() < until) {
+                    val open = findService(app, "_adb-tls-pairing._tcp", 4_000) != null
+                    if (open && !codeScreen) {
+                        codeScreen = true
+                        NotificationManagerCompat.from(app).cancel(NOTIF_PAIR) // re-alert as a pop-up
+                        askForCode(app)
+                        Log.i(TAG, "UAT adb_code_screen")
+                    } else if (!open && codeScreen && !busy) {
+                        codeScreen = false
+                        guide(app)
+                    }
+                    Bus.emit("adb", state(app))
+                    Thread.sleep(1_000)
+                }
+            } finally {
+                watching = false; codeScreen = false
+                if (!Prefs(app).adbPaired && !busy) NotificationManagerCompat.from(app).cancel(NOTIF_PAIR)
+                Bus.emit("adb", state(app))
+            }
+        }.start()
+    }
+
+    private fun guide(ctx: Context) {
+        ensureChannels(ctx)
+        val n = NotificationCompat.Builder(ctx, CH_SMS)
+            .setSmallIcon(R.drawable.ic_stat_link)
+            .setContentTitle("Dual Link voice setup")
+            .setContentText("Tap \"Wireless debugging\", then \"Pair device with pairing code\".")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "In Settings: tap the words \"Wireless debugging\", then \"Pair device with pairing code\". " +
+                    "Dual Link will ask for the code as soon as it appears."))
+            .setOnlyAlertOnce(true)
+            .setOngoing(true)
+            .build()
+        runCatching { NotificationManagerCompat.from(ctx).notify(NOTIF_PAIR, n) }
+    }
 
     /** Shows a notification where the user types the 6-digit code from "Pair device with pairing code". */
     fun askForCode(ctx: Context) {
@@ -135,8 +189,8 @@ object AdbSelf {
             .addRemoteInput(RemoteInput.Builder("code").setLabel("6-digit pairing code").build()).build()
         val n = NotificationCompat.Builder(ctx, CH_SMS)
             .setSmallIcon(R.drawable.ic_stat_link)
-            .setContentTitle("Dual Link: pair Wireless debugging")
-            .setContentText("Keep the pairing code on screen, then tap Enter code here.")
+            .setContentTitle("Type the 6-digit code here")
+            .setContentText("Tap \"Enter code\" and type the code shown behind this message.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOngoing(true)
             .addAction(action)
@@ -202,6 +256,7 @@ object AdbSelf {
                     ?: throw IllegalStateException("Pairing dialog not found. Open \"Pair device with pairing code\" and try again.")
                 if (!manager(app).pair("127.0.0.1", port, code)) throw IllegalStateException("Wrong code, try again")
                 Prefs(app).adbPaired = true
+                watching = false
                 lastError = null
                 Log.i(TAG, "UAT adb_paired")
                 progress(app, "Paired. Starting voice…")
