@@ -124,7 +124,7 @@ object Notifier {
             .build()
         val b = NotificationCompat.Builder(ctx, CH_SMS)
             .setSmallIcon(R.drawable.ic_stat_link)
-            .setContentTitle(address)
+            .setContentTitle(displayName(ctx, address))
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)

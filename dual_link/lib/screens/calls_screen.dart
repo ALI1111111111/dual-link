@@ -162,7 +162,7 @@ class _CallBannerState extends State<CallBanner> {
                       ? 'Incoming call · ${_simShort(_sims, c['sim'] as int)}'
                       : talking ? 'On call · talking on this phone · $dur' : 'On call on Phone A · $dur'),
                   if (!voiceReady)
-                    Text('Talk on Phone A (talking from this phone is off — Phone A → Advanced)',
+                    Text(kVoiceFeature ? 'Talk on Phone A (talking from this phone is off — Phone A → Advanced)' : 'Talk on Phone A',
                         style: Theme.of(context).textTheme.bodySmall),
                 ]),
               ),

@@ -14,6 +14,9 @@ val keyProps = Properties().apply {
     if (f.exists()) FileInputStream(f).use { load(it) }
 }
 val useUploadKey = !keyProps.isEmpty && !project.hasProperty("sideload")
+// Play Store build (-Pplay): leaves out "talk from Phone B" (Wireless debugging helper, its
+// libraries and permissions). Default builds keep it.
+val playBuild = project.hasProperty("play")
 
 android {
     namespace = "com.duallink.app"
@@ -35,6 +38,15 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    sourceSets {
+        getByName("main") {
+            val extra = if (playBuild) "src/novoice" else "src/voice"
+            java.srcDir("$extra/java")
+            kotlin.srcDir("$extra/kotlin")
+        }
+        if (playBuild) getByName("release").manifest.srcFile("src/play/AndroidManifest.xml")
     }
 
     signingConfigs {
@@ -67,9 +79,11 @@ flutter {
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     // Phone A talks to its own Wireless debugging (localhost only) to start the voice helper.
-    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
-    implementation("org.conscrypt:conscrypt-android:2.5.3") // TLS 1.3 for ADB pairing
-    implementation("org.bouncycastle:bcprov-jdk15to18:1.81") // same version libadb uses; builds our cert
+    if (!playBuild) {
+        implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+        implementation("org.conscrypt:conscrypt-android:2.5.3") // TLS 1.3 for ADB pairing
+        implementation("org.bouncycastle:bcprov-jdk15to18:1.81") // same version libadb uses; builds our cert
+    }
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

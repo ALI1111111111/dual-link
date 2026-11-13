@@ -295,3 +295,14 @@ fun ensureChannels(ctx: Context) {
         lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
     })
 }
+
+/** Contact name for a phone number (Phone B's address book), or the number itself. Never throws. */
+fun displayName(ctx: Context, number: String): String {
+    if (number.isBlank()) return "Unknown number"
+    if (ctx.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != android.content.pm.PackageManager.PERMISSION_GRANTED) return number
+    return runCatching {
+        val uri = android.net.Uri.withAppendedPath(android.provider.ContactsContract.PhoneLookup.CONTENT_FILTER_URI, android.net.Uri.encode(number))
+        ctx.contentResolver.query(uri, arrayOf(android.provider.ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)
+            ?.use { if (it.moveToFirst()) it.getString(0) else null }
+    }.getOrNull() ?: number
+}

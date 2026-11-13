@@ -1,6 +1,9 @@
 import 'package:flutter/services.dart';
 
 /// Talks to the Android services (GatewayService / ClientService).
+/// False in the Play Store build (--dart-define=VOICE=false): no "talk from Phone B".
+const bool kVoiceFeature = bool.fromEnvironment('VOICE', defaultValue: true);
+
 class Native {
   static const _m = MethodChannel('duallink/native');
   static const _e = EventChannel('duallink/events');

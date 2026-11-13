@@ -19,7 +19,7 @@ $port = 47820
 $results = New-Object System.Collections.Generic.List[object]
 
 # No named params here: PowerShell would treat adb flags like -d as short for a param name.
-# Every adb call is capped at 30 s: an emulator console command (emu sms/gsm) can hang forever.
+# Every adb call is capped (30 s; 3 min for installs): an emulator console command (emu sms/gsm) can hang forever.
 function Adb {
     $dev, $rest = $args
     $psi = New-Object Diagnostics.ProcessStartInfo $adb
@@ -27,7 +27,8 @@ function Adb {
     $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
     $p = [Diagnostics.Process]::Start($psi)
     $out = $p.StandardOutput.ReadToEndAsync(); $null = $p.StandardError.ReadToEndAsync()
-    if (-not $p.WaitForExit(30000)) {
+    $limit = if ($rest -contains 'install') { 180000 } else { 30000 }   # installing the debug APK is slow
+    if (-not $p.WaitForExit($limit)) {
         try { $p.Kill() } catch {}
         Write-Host "  [adb timeout] $($psi.Arguments)"
         return

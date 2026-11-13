@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'native.dart';
+
 /// Google Play "prominent disclosure": says exactly what personal data Dual Link touches, why,
 /// and where it goes, right before Android's permission prompts. Returns true only if the user agrees.
 Future<bool> showDataDisclosure(BuildContext context, {required bool phoneA}) async {
@@ -11,11 +13,12 @@ Future<bool> showDataDisclosure(BuildContext context, {required bool phoneA}) as
               'Sees incoming calls, the caller\'s number and your call history so Phone B can show them; '
                   'answers, declines or dials only when you tap it on Phone B.'),
         ]
-      : const [
+      : [
           (Icons.contacts, 'Contacts',
               'Shows names instead of numbers and lets you pick who to text. Stays on this phone.'),
           (Icons.sms, 'SMS messages',
               'As your default SMS app, stores the messages Phone A forwards and writes them to this phone\'s inbox.'),
+          if (kVoiceFeature)
           (Icons.mic, 'Microphone (only if you use "Talk here")',
               'Carries your voice to the call on Phone A while you talk. Never recorded.'),
         ];
