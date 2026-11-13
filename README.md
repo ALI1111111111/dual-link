@@ -12,7 +12,7 @@
 <p align="center">
   <a href="https://ali1111111111.github.io/dual-link-site/join.html"><b>Join the test (3 taps)</b></a> ·
   <a href="https://ali1111111111.github.io/dual-link-site/">Website</a> ·
-  <a href="https://youtu.be/0-UP4yRT_ms">Video</a> ·
+  <a href="https://youtu.be/ig1HpJJwTGg">Video</a> ·
   <a href="https://youtu.be/RPbOyae_HIw">Walkthrough</a> ·
   <a href="https://ali1111111111.github.io/dual-link-site/privacy.html">Privacy</a>
 </p>
@@ -68,7 +68,7 @@ Carry one phone, keep both numbers in reach. Leave the phone with your SIM (**Ph
 - **Never lost, never duplicated:** messages are queued and acknowledged, even across Wi-Fi drops; reconnects by itself.
 - **Light on battery:** an idle link uses under 1% CPU.
 
-**Videos:** [the problem and the fix (40 s)](https://youtu.be/0-UP4yRT_ms) · [30-second promo](https://youtu.be/5dDzYh4ltAI) · [setup and usage walkthrough](https://youtu.be/RPbOyae_HIw) (files in [`dual_link/play/assets/video`](dual_link/play/assets/video)).
+**Videos:** [the problem and the fix (47 s, with sound)](https://youtu.be/ig1HpJJwTGg) · [30-second promo](https://youtu.be/5dDzYh4ltAI) · [setup and usage walkthrough](https://youtu.be/RPbOyae_HIw) (files in [`dual_link/play/assets/video`](dual_link/play/assets/video)).
 
 ## Privacy and security
 

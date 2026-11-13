@@ -6,7 +6,7 @@ Links used below:
 - Become a tester (Play): https://play.google.com/apps/testing/com.duallink.app
 - Website: https://ali1111111111.github.io/dual-link-site/
 - Code: https://github.com/ALI1111111111/dual-link
-- Video: https://youtu.be/0-UP4yRT_ms
+- Video: https://youtu.be/ig1HpJJwTGg
 
 ## WhatsApp / Facebook (short)
 
